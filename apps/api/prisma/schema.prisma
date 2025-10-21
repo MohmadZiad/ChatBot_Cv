@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")  // نستعمل الـ Pooler هنا
+}
+
+
+
+enum AnalysisStatus {
+  queued
+  processing
+  validated
+  done
+  error
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  jobs Job[]
+  cvs  CV[]
+}
+
+model Job {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+
+  title       String
+  description String
+  createdAt   DateTime @default(now())
+
+  requirements JobRequirement[]
+  analyses    Analysis[]
+}
+
+model CV {
+  id               String   @id @default(uuid())
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id])
+
+  originalFilename String?
+  storagePath      String
+  parsedText       String?
+  lang             String?
+  createdAt        DateTime @default(now())
+
+  chunks   CVChunk[]
+  analyses Analysis[]
+}
+
+model CVChunk {
+  id         BigInt   @id @default(autoincrement())
+  cvId       String
+  cv         CV       @relation(fields: [cvId], references: [id], onDelete: Cascade)
+
+  section    String
+  content    String
+  embedding  Unsupported("vector")?   // سنحوّلها عبر SQL إلى vector(1536)
+  tokenCount Int?
+
+  @@index([cvId])
+}
+
+model JobRequirement {
+  id          BigInt  @id @default(autoincrement())
+  jobId       String
+  job         Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  requirement String
+  mustHave    Boolean @default(true)
+  weight      Decimal @default(1.0)
+}
+
+model Analysis {
+  id         String         @id @default(uuid())
+  jobId      String
+  cvId       String
+  job        Job            @relation(fields: [jobId], references: [id])
+  cv         CV             @relation(fields: [cvId], references: [id])
+
+  status     AnalysisStatus @default(queued)
+  score      Decimal?
+  breakdown  Json?
+  gaps       Json?
+  evidence   Json?
+  model      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([jobId])
+  @@index([cvId])
+}

@@ -11,7 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@ui/*": ["packages/ui/*"],
-      "@types/*": ["packages/types/*"],
+      "@shared/types/*": ["packages/types/*"],
       "@config/*": ["packages/config/*"],
       "@lingua/*": ["packages/lingua/*"],
       "@api/*": ["apps/api/src/*"]
