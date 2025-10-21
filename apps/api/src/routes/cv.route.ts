@@ -13,15 +13,18 @@ export async function cvRoute(app: FastifyInstance) {
     if (!mp) return reply.code(400).send({ error: "No file" });
 
     const fileBuf = await mp.toBuffer();
+    app.log.info(
+      { size: fileBuf?.length, mime: mp.mimetype, name: mp.filename },
+      "upload info"
+    );
     if (!fileBuf || fileBuf.length === 0) {
-      return reply.code(400).send({ error: "Empty file" });
+      return reply.code(400).send({ error: "Empty upload" });
     }
 
     const type = await fileTypeFromBuffer(fileBuf).catch(() => null);
     const mime = type?.mime ?? mp.mimetype ?? "application/octet-stream";
     const original = mp.filename ?? "cv.bin";
 
-    // 1) رفع إلى التخزين
     const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
 
     // 2) Parsing
@@ -51,12 +54,10 @@ export async function cvRoute(app: FastifyInstance) {
       cvId: cv.id,
       section: c.section,
       content: c.content,
-      embedding: null,
       tokenCount: Math.ceil(c.content.length / 4),
     }));
-    if (chunksData.length)
-      await prisma.cVChunk.createMany({ data: chunksData });
 
+    await prisma.cVChunk.createMany({ data: chunksData });
     return reply.code(201).send({
       cvId: cv.id,
       parts: chunksData.length,

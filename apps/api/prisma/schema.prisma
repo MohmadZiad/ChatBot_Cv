@@ -64,6 +64,7 @@ model CVChunk {
   content    String
   embedding  Unsupported("vector")?   // سنحوّلها عبر SQL إلى vector(1536)
   tokenCount Int?
+  hasEmbedding Boolean @default(false) // <== جديد
 
   @@index([cvId])
 }
