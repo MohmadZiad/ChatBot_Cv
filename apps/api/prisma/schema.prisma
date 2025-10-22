@@ -70,7 +70,7 @@ model CVChunk {
 }
 
 model JobRequirement {
-  id          BigInt  @id @default(autoincrement())
+  id    Int @id @default(autoincrement())
   jobId       String
   job         Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
 

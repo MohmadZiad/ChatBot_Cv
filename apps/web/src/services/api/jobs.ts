@@ -1,14 +1,29 @@
-import { http } from '../http';
+import { http } from "../http";
 
-export type JobRequirement = { id?: string; requirement: string; mustHave: boolean; weight: number };
-export type Job = { id: string; title: string; description: string; requirements: JobRequirement[]; createdAt?: string };
+export type JobRequirement = {
+  id?: string;
+  requirement: string;
+  mustHave: boolean;
+  weight: number;
+};
+export type Job = {
+  id: string;
+  title: string;
+  description: string;
+  requirements: JobRequirement[];
+  createdAt?: string;
+};
 
 export const jobsApi = {
-  create(input: { title: string; description: string; requirements?: JobRequirement[] }) {
-    return http.post<Job>('/jobs', input);
+  create(input: {
+    title: string;
+    description: string;
+    requirements?: JobRequirement[];
+  }) {
+    return http.post<Job>("/jobs", input);
   },
   list() {
-    return http.get<{ items: Job[] }>('/jobs');
+    return http.get<{ items: Job[] }>("/jobs");
   },
   get(id: string) {
     return http.get<Job>(`/jobs/${id}`);
@@ -21,5 +36,10 @@ export const jobsApi = {
   },
   deleteRequirement(id: string) {
     return http.delete(`/jobs/requirements/${id}`);
-  }
+  },
+
+  // NEW: اقتراح متطلبات من JD
+  suggestFromJD(jdText: string) {
+    return http.post<{ items: JobRequirement[] }>("/jobs/suggest", { jdText });
+  },
 };

@@ -1,3 +1,4 @@
+// apps/web/src/app/layout.tsx
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -48,6 +49,7 @@ export default function RootLayout({
             <span className="font-mono">Next.js • Tailwind • Motion</span>
           </div>
         </footer>
+        {/* الزر العائم + نافذة الشات */}
         <Chatbot />
       </body>
     </html>
