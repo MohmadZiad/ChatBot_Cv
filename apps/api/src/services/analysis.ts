@@ -1,10 +1,25 @@
+// apps/api/src/services/analysis.ts
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
 import { embedTexts } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvEmbeddings } from "./embeddings.js";
 
+type HttpError = Error & { status?: number; code?: string };
+
+function httpError(
+  message: string,
+  status = 422,
+  code = "UNPROCESSABLE"
+): HttpError {
+  const err: HttpError = new Error(message);
+  err.status = status;
+  err.code = code;
+  return err;
+}
+
 export async function runAnalysis(jobId: string, cvId: string) {
+  // يضمن وجود embeddings أو يرمي 422 NO_CV_TEXT
   await ensureCvEmbeddings(cvId);
 
   const chunks = await prisma.$queryRaw<
@@ -15,19 +30,27 @@ export async function runAnalysis(jobId: string, cvId: string) {
     WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
     ORDER BY id ASC
   `;
-  if (!chunks.length) throw new Error("No CV chunks embeddings available.");
+  if (!chunks.length) {
+    throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
+  }
 
   const reqs = await prisma.jobRequirement.findMany({
     where: { jobId },
     orderBy: { id: "asc" },
   });
-  if (!reqs.length) throw new Error("Job has no requirements.");
+  if (!reqs.length)
+    throw httpError("الوظيفة بلا متطلبات.", 422, "NO_JOB_REQUIREMENTS");
 
   let reqVecs: number[][];
   try {
     reqVecs = await embedTexts(reqs.map((r) => r.requirement));
   } catch (e: any) {
-    throw new Error(`OpenAI embeddings failed: ${e?.message || e}`);
+    const err: HttpError = new Error(
+      `OpenAI embeddings failed: ${e?.message || e}`
+    );
+    err.status = 502; // Bad Gateway لخدمة خارجية
+    err.code = "EMBEDDINGS_FAILED";
+    throw err;
   }
 
   const perReq: any[] = [];
@@ -85,9 +108,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       cvId,
       status: "done",
       score: score10,
-      // 👇 breakdown كمصفوفة مباشرة
       breakdown: perReq as unknown as Prisma.InputJsonValue,
-      // اختياري: ميتا إضافية لو تحب
       evidence: evidence as Prisma.InputJsonValue,
       gaps: buildGaps(perReq) as Prisma.InputJsonValue,
       model: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
@@ -102,10 +123,10 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
 function buildGaps(perReq: any[]) {
   const missing = perReq
-    .filter((r) => r.mustHave && r.similarity < 0.35)
-    .map((r) => r.requirement);
+    .filter((r: any) => r.mustHave && r.similarity < 0.35)
+    .map((r: any) => r.requirement);
   const weak = perReq
-    .filter((r) => r.similarity >= 0.2 && r.score10 < 7)
-    .map((r) => r.requirement);
+    .filter((r: any) => r.similarity >= 0.2 && r.score10 < 7)
+    .map((r: any) => r.requirement);
   return { mustHaveMissing: missing, improve: weak };
 }

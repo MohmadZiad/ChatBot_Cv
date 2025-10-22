@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "^10.0.0",
+    "@fastify/cors": "^10.1.0",
     "@fastify/multipart": "^9.2.1",
     "@prisma/client": "^6.17.1",
     "@supabase/supabase-js": "^2.76.1",
@@ -22,6 +22,7 @@
     "mammoth": "^1.11.0",
     "openai": "^4.57.0",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.4.296",
     "prisma": "^6.17.1",
     "zod": "^3.23.8"
   },

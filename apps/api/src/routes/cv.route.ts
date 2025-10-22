@@ -1,3 +1,4 @@
+// apps/api/src/routes/cv.route.ts
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { fileTypeFromBuffer } from "file-type";
@@ -6,19 +7,28 @@ import { parsePDF, parseDOCX } from "../ingestion/parse.js";
 import { chunkText } from "../ingestion/chunk.js";
 import { detectLang } from "../nlp/lang.js";
 
+type HttpError = Error & { status?: number; code?: string };
+const unprocessable = (message: string, code = "UNPROCESSABLE"): HttpError => {
+  const e: HttpError = new Error(message);
+  e.status = 422;
+  e.code = code;
+  return e;
+};
+
 export async function cvRoute(app: FastifyInstance) {
   app.post("/upload", async (req, reply) => {
     try {
       const mp = await req.file(); // requires @fastify/multipart
-      if (!mp) return reply.code(400).send({ error: "No file" });
+      if (!mp)
+        return reply
+          .code(400)
+          .send({ ok: false, code: "NO_FILE", message: "No file" });
 
       const fileBuf = await mp.toBuffer();
-      app.log.info(
-        { size: fileBuf?.length, mime: mp.mimetype, name: mp.filename },
-        "upload info"
-      );
       if (!fileBuf?.length)
-        return reply.code(400).send({ error: "Empty upload" });
+        return reply
+          .code(400)
+          .send({ ok: false, code: "EMPTY_UPLOAD", message: "Empty upload" });
 
       const type = await fileTypeFromBuffer(fileBuf).catch(() => null);
       const mime = type?.mime ?? mp.mimetype ?? "application/octet-stream";
@@ -27,61 +37,66 @@ export async function cvRoute(app: FastifyInstance) {
       // 1) خزّن الملف أولًا
       const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
 
-      // 2) جرّب استخراج النص (لا ترمي 500 لو فشل)
+      // 2) جرّب استخراج النص
       let text = "";
-      try {
-        if (mime.includes("pdf")) text = await parsePDF(fileBuf);
-        else if (
-          mime.includes("word") ||
-          original.toLowerCase().endsWith(".docx")
-        )
-          text = await parseDOCX(fileBuf);
-        else text = fileBuf.toString("utf8");
-      } catch (err) {
-        app.log.warn(
-          { err: String(err) },
-          "parse failed, saving file without text"
-        );
-        text = "";
-      }
+      if (mime.includes("pdf")) text = await parsePDF(fileBuf);
+      else if (
+        mime.includes("word") ||
+        original.toLowerCase().endsWith(".docx")
+      )
+        text = await parseDOCX(fileBuf);
+      else text = fileBuf.toString("utf8");
       text = (text || "").trim();
-      const lang = text ? detectLang(text) : "en";
+
+      // guard: لو النص قليل جدًا اعتبره غير صالح
+      if (!text || text.length < 200) {
+        return reply.code(422).send({
+          ok: false,
+          code: "NO_EXTRACTABLE_TEXT",
+          message:
+            "لم أستطع استخراج نص صالح من السيرة الذاتية. رجاءً ارفع DOCX أو PDF يحتوي نصًا (ليس صورة).",
+          storagePath: path,
+          publicUrl,
+        });
+      }
+
+      const lang = detectLang(text);
 
       // 3) أنشئ CV
       const cv = await prisma.cV.create({
         data: {
           storagePath: path,
           originalFilename: original,
-          parsedText: text ? text.slice(0, 50_000) : null,
+          parsedText: text.slice(0, 50_000),
           lang,
         },
       });
 
-      // 4) تقطيع وتخزين الشُنكس (إن وُجد نص)
-      let parts = 0;
-      if (text) {
-        const chunksData = chunkText(text, 1000).map((c) => ({
-          cvId: cv.id,
-          section: c.section,
-          content: c.content,
-          tokenCount: Math.ceil(c.content.length / 4),
-        }));
-        parts = chunksData.length;
-        if (parts) await prisma.cVChunk.createMany({ data: chunksData });
-      }
+      // 4) تقطيع وتخزين الشُنكس
+      const chunksData = chunkText(text, 1000).map((c) => ({
+        cvId: cv.id,
+        section: c.section,
+        content: c.content,
+        tokenCount: Math.ceil(c.content.length / 4),
+      }));
+      const parts = chunksData.length;
+      if (parts) await prisma.cVChunk.createMany({ data: chunksData });
 
       return reply.code(201).send({
+        ok: true,
         cvId: cv.id,
         parts,
         storagePath: path,
         publicUrl,
-        parsed: Boolean(text),
+        parsed: true,
       });
     } catch (err: any) {
       app.log.error({ err }, "cv upload failed");
+      const status = err?.status ?? 500;
+      const code = err?.code ?? "UPLOAD_FAILED";
       return reply
-        .code(500)
-        .send({ error: "upload failed", message: err?.message });
+        .code(status)
+        .send({ ok: false, code, message: err?.message || "upload failed" });
     }
   });
 
