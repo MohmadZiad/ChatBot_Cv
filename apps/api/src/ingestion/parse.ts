@@ -1,8 +1,9 @@
+// apps/api/src/ingestion/parse.ts
 // ======================================================
-// Aggregates multiple extractors for PDFs (embedded text, PDF.js, OCR).
-// Optionally uses Google Document AI if USE_DOC_AI=1.
-// Always picks the "longest" result to be robust.
-// Enable verbose logging with EXTRACT_DEBUG=1.
+// - يجمع عدّة مستخرِجات PDF (نص مضمّن، PDF.js، OCR).
+// - عند USE_DOC_AI=1 نجرب Google Document AI أولًا (اختياري).
+// - دائمًا نختار أطول نتيجة لضمان الاعتمادية عبر الترميزات المختلفة.
+// - فعّل سجلات التصحيح بـ EXTRACT_DEBUG=1.
 // ======================================================
 
 import path from "node:path";
@@ -10,17 +11,17 @@ import fs from "node:fs/promises";
 import mammoth from "mammoth";
 import { docaiExtractPdfText } from "../services/docai";
 
-// -------------------------
-// Lazy imports (runtime)
-// -------------------------
+/* =========================
+   Lazy imports (runtime only)
+========================= */
 async function loadPdfJs(): Promise<any | null> {
-  const variants = [
+  const candidates = [
     "pdfjs-dist/legacy/build/pdf.js",
     "pdfjs-dist/build/pdf.js",
     "pdfjs-dist/build/pdf.mjs",
     "pdfjs-dist",
   ];
-  for (const mod of variants) {
+  for (const mod of candidates) {
     try {
       return await import(mod);
     } catch {}
@@ -39,7 +40,7 @@ async function getPdfParse() {
 let _tesseract: any | null = null;
 async function getTesseract() {
   if (_tesseract) return _tesseract;
-  const mod = await import("tesseract.js");
+  const mod = await import("tesseract.js"); // v6
   _tesseract = (mod as any).default ?? (mod as any);
   return _tesseract;
 }
@@ -60,11 +61,12 @@ async function getWordExtractor() {
   return _wordExtractor;
 }
 
-// -------------------------
-// Helpers
-// -------------------------
+/* =========================
+   Helpers
+========================= */
 function toBuf(input: unknown): Buffer {
-  if (typeof input === "string") throw new Error("Pass a Buffer, not a path.");
+  if (typeof input === "string")
+    throw new Error("Pass a Buffer, not a file path.");
   return Buffer.isBuffer(input)
     ? (input as Buffer)
     : Buffer.from(input as ArrayBufferLike);
@@ -75,7 +77,7 @@ function env(key: string, fallback?: string) {
   return v == null || v === "" ? fallback : v;
 }
 
-function joinParts(parts: (string | null | undefined)[], sep = "\n") {
+function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
   return parts
     .filter(Boolean)
     .map((s) => (s as string).trim())
@@ -83,17 +85,9 @@ function joinParts(parts: (string | null | undefined)[], sep = "\n") {
     .join(sep);
 }
 
-function normLangs(l: string | undefined | null): string {
-  let langs = (l ?? "").trim();
-  if (!langs) return "eng";
-  // allow: "eng,ara" or "eng+ara"
-  if (langs.includes(",")) langs = langs.replace(/,/g, "+");
-  return langs;
-}
-
-// -------------------------
-// PDF extractors
-// -------------------------
+/* =========================
+   PDF extractors
+========================= */
 async function extractTextWithPdfParse(
   buf: Buffer,
   log?: (m: any) => void
@@ -120,9 +114,8 @@ async function extractTextWithPdfJs(
     return "";
   }
   try {
-    // run without external worker
-    pdfjsLib.GlobalWorkerOptions &&
-      (pdfjsLib.GlobalWorkerOptions.workerSrc = undefined as any);
+    if (pdfjsLib?.GlobalWorkerOptions)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = undefined as any;
   } catch {}
 
   try {
@@ -135,8 +128,8 @@ async function extractTextWithPdfJs(
     });
     const doc = await loadingTask.promise;
 
-    let text = "";
     const linkLines: string[] = [];
+    let text = "";
 
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
@@ -151,18 +144,19 @@ async function extractTextWithPdfJs(
           if (uri) linkLines.push(title ? `${title}: ${uri}` : uri);
         }
       } catch {}
+
       (page as any)?.cleanup?.();
     }
     (doc as any)?.cleanup?.();
 
-    const out = joinParts([
-      text,
-      linkLines.length ? "\nLinks:\n" + linkLines.join("\n") : "",
-    ]);
+    const out = joinParts(
+      [text, linkLines.length ? "\nLinks:\n" + linkLines.join("\n") : ""],
+      "\n"
+    );
     const t = out.trim();
     log?.({
       step: "pdfjs",
-      pages: doc.numPages,
+      pages: (doc as any)?.numPages,
       length: t.length,
       links: linkLines.length,
     });
@@ -173,15 +167,30 @@ async function extractTextWithPdfJs(
   }
 }
 
-async function renderPageToPngBuffer(pdfjsLib: any, page: any, scale = 3) {
+async function renderPageToPngBuffer(
+  pdfjsLib: any,
+  page: any,
+  scale = 3,
+  debugFirst = false
+) {
   const { createCanvas } = await getCanvas();
   const viewport = page.getViewport({ scale });
   const canvas = createCanvas(viewport.width, viewport.height);
   const ctx = canvas.getContext("2d");
   await page.render({ canvasContext: ctx, viewport }).promise;
-  return canvas.toBuffer("image/png");
+
+  const png = canvas.toBuffer("image/png");
+  if (debugFirst) {
+    try {
+      const dir = path.join(process.cwd(), "storage", "ocr-debug");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "page1-preview.png"), png);
+    } catch {}
+  }
+  return png;
 }
 
+/** OCR fallback (Tesseract.js v6 expects array of langs) */
 async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const pdfjsLib = await loadPdfJs();
   if (!pdfjsLib) {
@@ -189,25 +198,33 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     return "";
   }
 
-  const OCR_LANGS = normLangs(env("OCR_LANGS", "eng+ara"));
+  // sanitize langs for v6 (array), allow env of "eng+ara" or "eng,ara"
+  const langsArr = (env("OCR_LANGS", "eng+ara") || "eng")
+    .replace(/,/g, "+")
+    .split("+")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const MAX_PAGES = Number(env("OCR_MAX_PAGES", "30"));
   const SCALE = Number(env("OCR_RENDER_SCALE", "3"));
   const TESSDATA = env(
     "TESSDATA_PATH",
     path.join(process.cwd(), "apps/api/assets/tessdata")
   )!;
-  let worker: any | null = null;
+  const DEBUG = env("OCR_DEBUG", "0") !== "0";
 
   try {
     const { createWorker } = await getTesseract();
-    worker = await createWorker({
+    const worker = await createWorker({
       langPath: TESSDATA,
       cacheMethod: "readOnly",
-      // logger: (m:any)=>log?.({ step:"ocr", tesseract:m })
+      // logger: DEBUG ? (m: any) => log?.({ step: "tesseract", m }) : undefined,
     });
 
-    await worker.loadLanguage(OCR_LANGS);
-    await worker.initialize(OCR_LANGS);
+    // v6: array of langs
+    await worker.loadLanguage(langsArr as any);
+    await worker.initialize(langsArr.join("+"));
+
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
       tessedit_ocr_engine_mode: "1",
@@ -223,31 +240,36 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
 
     let out = "";
     const pages = Math.min(doc.numPages, MAX_PAGES);
+
     for (let i = 1; i <= pages; i++) {
       const page = await doc.getPage(i);
-      const png = await renderPageToPngBuffer(pdfjsLib, page, SCALE);
+      const png = await renderPageToPngBuffer(
+        pdfjsLib,
+        page,
+        SCALE,
+        DEBUG && i === 1
+      );
       const { data } = await worker.recognize(png);
       out += (data?.text || "") + "\n";
       (page as any)?.cleanup?.();
     }
     (doc as any)?.cleanup?.();
+
+    await worker.terminate();
+
     out = out.replace(/\u0000/g, "").trim();
     log?.({ step: "ocr", pages, length: out.length });
     return out;
   } catch (e: any) {
     log?.({ step: "ocr", error: String(e?.message ?? e) });
     return "";
-  } finally {
-    try {
-      await worker?.terminate();
-    } catch {}
   }
 }
 
-// -------------------------
-// Other formats
-// -------------------------
-export async function parseDOCX(buf: Buffer) {
+/* =========================
+   DOC / DOCX / TEXT / IMAGE
+========================= */
+export async function parseDOCX(buf: Buffer): Promise<string> {
   try {
     const { value } = await mammoth.extractRawText({ buffer: buf });
     return (value || "").trim();
@@ -256,7 +278,7 @@ export async function parseDOCX(buf: Buffer) {
   }
 }
 
-export async function parseDOC(buf: Buffer) {
+export async function parseDOC(buf: Buffer): Promise<string> {
   try {
     const WordExtractor = await getWordExtractor();
     const extractor = new WordExtractor();
@@ -267,7 +289,7 @@ export async function parseDOC(buf: Buffer) {
   }
 }
 
-export async function parsePlainText(buf: Buffer) {
+export async function parsePlainText(buf: Buffer): Promise<string> {
   try {
     return buf.toString("utf8").trim();
   } catch {
@@ -275,26 +297,32 @@ export async function parsePlainText(buf: Buffer) {
   }
 }
 
-export async function parseImageWithOCR(buf: Buffer) {
+export async function parseImageWithOCR(buf: Buffer): Promise<string> {
   try {
     const { createWorker } = await getTesseract();
-    const OCR_LANGS = normLangs(env("OCR_LANGS", "eng+ara"));
+    const langsArr = (env("OCR_LANGS", "eng+ara") || "eng")
+      .replace(/,/g, "+")
+      .split("+")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const TESSDATA = env(
       "TESSDATA_PATH",
       path.join(process.cwd(), "apps/api/assets/tessdata")
     )!;
+
     const worker = await createWorker({
       langPath: TESSDATA,
       cacheMethod: "readOnly",
     });
-    await worker.loadLanguage(OCR_LANGS);
-    await worker.initialize(OCR_LANGS);
+    await worker.loadLanguage(langsArr as any);
+    await worker.initialize(langsArr.join("+"));
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
       tessedit_ocr_engine_mode: "1",
       preserve_interword_spaces: "1",
       user_defined_dpi: "300",
     });
+
     const { data } = await worker.recognize(buf);
     await worker.terminate();
     return (data?.text || "").trim();
@@ -303,9 +331,9 @@ export async function parseImageWithOCR(buf: Buffer) {
   }
 }
 
-// -------------------------
-// Public API
-// -------------------------
+/* =========================
+   MAIN PUBLIC FUNCTIONS
+========================= */
 export async function parsePDF(input: unknown): Promise<string> {
   const buf = toBuf(input);
   const debug = (process.env.EXTRACT_DEBUG || "0") !== "0";
@@ -313,12 +341,10 @@ export async function parsePDF(input: unknown): Promise<string> {
     debug && console.log("[PDF-EXTRACT]", ...args);
 
   const MIN = Number(env("MIN_EXTRACTED_TEXT", "60"));
-  const OCR_ENABLED = (env("ENABLE_OCR", "1") || "1") !== "0";
   const useDocAi = (env("USE_DOC_AI", "0") || "0") !== "0";
 
   let best = "";
 
-  // 0) DocAI (اختياري)
   if (useDocAi) {
     try {
       const d = await docaiExtractPdfText(buf);
@@ -329,18 +355,17 @@ export async function parsePDF(input: unknown): Promise<string> {
     }
   }
 
-  // 1) pdf-parse
-  const t1 = await extractTextWithPdfParse(buf, (m) => log(m));
-  if (t1.length > best.length) best = t1;
-
-  // 2) pdfjs
-  const t2 = await extractTextWithPdfJs(buf, (m) => log(m));
-  if (t2.length > best.length) best = t2;
-
-  // 3) OCR فقط عند الحاجة
-  if (OCR_ENABLED && best.length < MIN) {
-    const t3 = await ocrPdf(buf, (m) => log(m));
-    if (t3.length > best.length) best = t3;
+  for (const extractor of [
+    extractTextWithPdfParse,
+    extractTextWithPdfJs,
+    ocrPdf,
+  ]) {
+    try {
+      const t = await extractor(buf, (m: any) => log(m));
+      if (t.length > best.length) best = t;
+    } catch (err) {
+      log({ step: "extractor error", error: String(err) });
+    }
   }
 
   log({ step: "final", length: best.length });
@@ -351,60 +376,48 @@ export async function parseAny(
   input: unknown,
   mime?: string | null,
   filename?: string | null
-): Promise<string> {
+) {
   const buf = toBuf(input);
   const name = (filename || "").toLowerCase();
   const is = (ext: string) => name.endsWith(ext);
 
-  const MIN = Number(env("MIN_EXTRACTED_TEXT", "60"));
-  const OCR_ENABLED = (env("ENABLE_OCR", "1") || "1") !== "0";
-
-  let best = "";
+  let runs: Array<() => Promise<string>> = [];
 
   if ((mime || "").includes("pdf") || is(".pdf")) {
-    // نفس منطق parsePDF لكن بدون DocAI هنا
-    const t1 = await extractTextWithPdfParse(buf);
-    if (t1.length > best.length) best = t1;
-
-    const t2 = await extractTextWithPdfJs(buf);
-    if (t2.length > best.length) best = t2;
-
-    if (OCR_ENABLED && best.length < MIN) {
-      const t3 = await ocrPdf(buf);
-      if (t3.length > best.length) best = t3;
-    }
-
-    return best.trim();
-  }
-
-  // الأنواع الأخرى:
-  const runs: Array<() => Promise<string>> = [];
-  if ((mime || "").includes("wordprocessingml.document") || is(".docx")) {
-    runs.push(() => parseDOCX(buf));
+    runs = [
+      () => extractTextWithPdfParse(buf),
+      () => extractTextWithPdfJs(buf),
+      () => ocrPdf(buf),
+    ];
+  } else if (
+    (mime || "").includes("wordprocessingml.document") ||
+    is(".docx")
+  ) {
+    runs = [() => parseDOCX(buf)];
   } else if ((mime || "") === "application/msword" || is(".doc")) {
-    runs.push(() => parseDOC(buf));
+    runs = [() => parseDOC(buf)];
   } else if (
     (mime || "").startsWith("image/") ||
     [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"].some(is)
   ) {
-    runs.push(() => parseImageWithOCR(buf));
+    runs = [() => parseImageWithOCR(buf)];
   } else if (
     (mime || "").startsWith("text/") ||
     [".txt", ".md", ".csv"].some(is)
   ) {
-    runs.push(() => parsePlainText(buf));
+    runs = [() => parsePlainText(buf)];
   } else {
-    runs.push(
-      () => parsePlainText(buf),
-      () => parseImageWithOCR(buf)
-    );
+    runs = [() => parsePlainText(buf), () => parseImageWithOCR(buf)];
   }
 
+  let best = "";
   for (const run of runs) {
     try {
       const t = (await run())?.trim?.() || "";
       if (t.length > best.length) best = t;
-    } catch {}
+    } catch (err) {
+      console.error("[PDF-EXTRACT] parseAny error:", err);
+    }
   }
   return best.trim();
 }

@@ -1,8 +1,7 @@
 // apps/web/src/services/api/cv.ts
 import { http } from "../http";
 
-const ORIGIN =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:4000";
+const ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 const API = `${ORIGIN}/api`;
 
 export type CV = {
@@ -16,6 +15,7 @@ export type CV = {
   updatedAt?: string;
 };
 
+
 export type UploadCVResponse = {
   ok: boolean;
   cvId: string;
@@ -24,13 +24,6 @@ export type UploadCVResponse = {
   publicUrl?: string;
   parsed: boolean;
   textLength?: number;
-};
-
-export type UploadCVError = {
-  ok: false;
-  code: string;
-  message: string;
-  extractedLength?: number;
 };
 
 export function buildPublicUrl(cv: CV): string | null {
@@ -50,9 +43,9 @@ export const cvApi = {
       sizeInMB: (file.size / (1024 * 1024)).toFixed(2) + " MB",
     });
 
-    const maxSize = 20 * 1024 * 1024; // 20 MB
+    const maxSize = 20 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new Error("❌ حجم الملف كبير جداً. الحد الأقصى هو 20 ميجابايت.");
+      throw new Error("حجم الملف كبير جداً. الحد الأقصى 20MB.");
     }
 
     const form = new FormData();
@@ -63,49 +56,47 @@ export const cvApi = {
 
     try {
       const res = await fetch(url, { method: "POST", body: form });
-
       console.log("📨 Response status:", res.status, res.statusText);
+
       const ct = res.headers.get("content-type") || "";
-      let responseData: any = null;
+      let payload: any = null;
       let rawText = "";
 
       if (ct.includes("application/json")) {
-        responseData = await res.json().catch(() => null);
+        payload = await res.json().catch(() => null);
       } else {
         rawText = await res.text().catch(() => "");
         try {
-          responseData = rawText ? JSON.parse(rawText) : null;
+          payload = rawText ? JSON.parse(rawText) : null;
         } catch {}
       }
 
       if (!res.ok) {
-        const msg =
-          responseData?.message ||
-          rawText ||
-          `خطأ أثناء رفع الملف (HTTP ${res.status})`;
-        console.error("❌ Upload error payload:", responseData ?? rawText);
-        throw new Error(msg);
+        const message =
+          payload?.message || rawText || `HTTP ${res.status} ${res.statusText}`;
+        console.error("❌ Upload error payload:", payload ?? rawText);
+        throw new Error(message);
       }
 
-      if (!responseData?.ok) {
-        console.warn("⚠️ Unexpected success payload:", responseData);
+      if (!payload || payload.ok !== true) {
+        console.warn("⚠️ Unexpected success payload:", payload);
       }
 
-      console.log("✅ Upload successful:", responseData);
-      return responseData as UploadCVResponse;
-    } catch (error: any) {
-      console.error("❌ Upload failed:", error);
+      console.log("✅ Upload successful:", payload);
+      return payload as UploadCVResponse;
+    } catch (e: any) {
+      console.error("❌ Upload failed:", e);
 
-      const msg = (error?.message || "").toLowerCase();
+      const msg = String(e?.message || "").toLowerCase();
       if (
         msg.includes("failed to fetch") ||
         msg.includes("connection refused")
       ) {
         throw new Error(
-          "🚫 فشل الاتصال بالسيرفر. تأكد من تشغيل الـ API على http://localhost:4000 وتفعيل CORS."
+          "فشل الاتصال بالسيرفر. تأكّد أن الـ API يعمل على http://localhost:4000 وأن CORS مفعّل."
         );
       }
-      throw error;
+      throw e;
     }
   },
 
