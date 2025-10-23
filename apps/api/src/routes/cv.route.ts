@@ -6,6 +6,8 @@ import { putToStorage } from "../ingestion/upload.js";
 import { parsePDF, parseDOCX } from "../ingestion/parse.js";
 import { chunkText } from "../ingestion/chunk.js";
 import { detectLang } from "../nlp/lang.js";
+import { normalizeCvText } from "../ingestion/validation.js";
+import { debugLog } from "../utils/debug.js";
 
 type HttpError = Error & { status?: number; code?: string };
 const unprocessable = (message: string, code = "UNPROCESSABLE"): HttpError => {
@@ -35,6 +37,11 @@ export async function cvRoute(app: FastifyInstance) {
       const original = mp.filename ?? "cv.bin";
 
       // 1) خزّن الملف أولًا
+      debugLog("cv.upload", "storing file", {
+        mime,
+        bytes: fileBuf.length,
+        original,
+      });
       const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
 
       // 2) جرّب استخراج النص
@@ -46,10 +53,16 @@ export async function cvRoute(app: FastifyInstance) {
       )
         text = await parseDOCX(fileBuf);
       else text = fileBuf.toString("utf8");
-      text = (text || "").trim();
+      const normalizedText = normalizeCvText(text);
 
       // guard: لو النص قليل جدًا اعتبره غير صالح
-      if (!text || text.length < 200) {
+      if (!normalizedText) {
+        debugLog("cv.upload", "extracted text unusable", {
+          storagePath: path,
+          mime,
+          bytes: fileBuf.length,
+          length: typeof text === "string" ? text.length : 0,
+        });
         return reply.code(422).send({
           ok: false,
           code: "NO_EXTRACTABLE_TEXT",
@@ -60,20 +73,20 @@ export async function cvRoute(app: FastifyInstance) {
         });
       }
 
-      const lang = detectLang(text);
+      const lang = detectLang(normalizedText);
 
       // 3) أنشئ CV
       const cv = await prisma.cV.create({
         data: {
           storagePath: path,
           originalFilename: original,
-          parsedText: text.slice(0, 50_000),
+          parsedText: normalizedText.slice(0, 50_000),
           lang,
         },
       });
 
       // 4) تقطيع وتخزين الشُنكس
-      const chunksData = chunkText(text, 1000).map((c) => ({
+      const chunksData = chunkText(normalizedText, 1000).map((c) => ({
         cvId: cv.id,
         section: c.section,
         content: c.content,
@@ -81,6 +94,13 @@ export async function cvRoute(app: FastifyInstance) {
       }));
       const parts = chunksData.length;
       if (parts) await prisma.cVChunk.createMany({ data: chunksData });
+
+      debugLog("cv.upload", "stored CV chunks", {
+        cvId: cv.id,
+        parts,
+        lang,
+        textLength: normalizedText.length,
+      });
 
       return reply.code(201).send({
         ok: true,
