@@ -9,6 +9,9 @@ import { jobsApi, type JobRequirement } from "@/services/api/jobs";
 import { analysesApi, type Analysis } from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import RequirementPicker, {
+  type ReqItem,
+} from "@/components/RequirementPicker";
 
 /** Chat message shape */
 type Msg = {
@@ -17,41 +20,24 @@ type Msg = {
   content: React.ReactNode;
 };
 
-/** Safe helper: read current language from localStorage on the client only */
 function getLangFromStorage(): Lang {
   try {
     if (typeof window !== "undefined") {
       return (window.localStorage.getItem("lang") as Lang) || "ar";
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
   return "ar";
 }
-
-/**
- * Language hook
- * - Avoids reading localStorage during the first render (which can run in SSR)
- * - Hydrates from localStorage after mount and keeps in sync via `storage` event
- */
 function useLang(): Lang {
-  // Use a stable default for the initial render to avoid "localStorage is not defined"
   const [lang, setLang] = React.useState<Lang>("ar");
-
   React.useEffect(() => {
-    // Read the actual value after the component mounts (client-only)
     setLang(getLangFromStorage());
-
-    // Keep language in sync across tabs/windows
     const onStorage = () => setLang(getLangFromStorage());
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-
   return lang;
 }
-
-/** Parse requirements from free-form lines: "React, must, 2" / "TypeScript, 1" / "Tailwind" */
 function parseRequirements(text: string): JobRequirement[] {
   return text
     .split("\n")
@@ -74,7 +60,6 @@ export default function AIConsole() {
   const lang = useLang();
   const tt = (k: string) => t(lang, k);
 
-  // Messages shown in the chat area
   const [messages, setMessages] = React.useState<Msg[]>([
     {
       id: "m0",
@@ -85,18 +70,16 @@ export default function AIConsole() {
           <div className="text-sm opacity-80 mt-1">{tt("chat.hello")}</div>
           <ul className="text-xs opacity-70 mt-2 list-disc ps-5">
             <li>
-              1) Write job requirements (one per line). Optionally add{" "}
-              <b>must</b> and a weight like <code>2</code>.
+              1) اكتب المتطلبات (سطر لكل متطلب) مع must و/أو وزن (مثال: 2).
             </li>
-            <li>2) Upload the CV (PDF/DOCX).</li>
-            <li>3) Click {tt("chat.run")} to see the result.</li>
+            <li>2) ارفع الـCV (PDF/DOCX).</li>
+            <li>3) اضغط {tt("chat.run")} لعرض النتيجة.</li>
           </ul>
         </div>
       ),
     },
   ]);
 
-  // Session state
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [reqText, setReqText] = React.useState("");
@@ -105,20 +88,22 @@ export default function AIConsole() {
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<Analysis | null>(null);
 
-  /** Push a message to the chat */
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, result]);
+
   const push = (m: Omit<Msg, "id">) =>
     setMessages((s) => [
       ...s,
       { ...m, id: Math.random().toString(36).slice(2) },
     ]);
 
-  /** Handle requirements submission */
   const onSendReqs = () => {
     if (!reqText.trim()) return;
     const parsed = parseRequirements(reqText);
     setReqs(parsed);
-
-    // Echo back parsed requirements
     push({
       role: "user",
       content: (
@@ -135,22 +120,23 @@ export default function AIConsole() {
         </div>
       ),
     });
-
-    // Prompt for CV upload
     push({
       role: "bot",
       content: (
         <div className="text-sm">
-          ✅ Requirements received. Now upload the CV then click{" "}
-          {tt("chat.run")}.
+          ✅ تم استلام المتطلبات. ارفع الـCV ثم اضغط {tt("chat.run")}.
         </div>
       ),
     });
-
     setReqText("");
   };
 
-  /** Handle CV picking */
+  // إدراج بند من RequirementPicker إلى الـtextarea مباشرة (بدون تغيير لوجيك التحليل)
+  const onQuickAdd = (item: ReqItem) => {
+    const line = `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`;
+    setReqText((prev) => (prev ? `${prev}\n${line}` : line));
+  };
+
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     if (!f) return;
@@ -166,7 +152,6 @@ export default function AIConsole() {
     });
   };
 
-  /** Full run: create job → upload CV → run analysis → fetch final result */
   const run = async () => {
     if (!cvFile || reqs.length === 0) {
       push({
@@ -181,11 +166,8 @@ export default function AIConsole() {
       });
       return;
     }
-
     setLoading(true);
     setResult(null);
-
-    // Visual "send" feedback
     push({
       role: "user",
       content: (
@@ -196,34 +178,29 @@ export default function AIConsole() {
     });
 
     try {
-      // 1) Create job
       const job = await jobsApi.create({
         title: title || (lang === "ar" ? "وظيفة بدون عنوان" : "Untitled Job"),
         description: description || "—",
         requirements: reqs,
       });
-
-      // 2) Upload CV
       const uploaded = await cvApi.upload(cvFile);
-
-      // 3) Start analysis
       const a = await analysesApi.run({ jobId: job.id, cvId: uploaded.cvId });
 
-      // Show running indicator
       push({
         role: "sys",
         content: (
-          <div className="inline-flex items-center gap-2 text-xs opacity-70">
+          <div
+            aria-live="polite"
+            className="inline-flex items-center gap-2 text-xs opacity-70"
+          >
             <Loader2 className="size-4 animate-spin" /> {tt("chat.running")}
           </div>
         ),
       });
 
-      // 4) Fetch final result
       const final = await analysesApi.get(a.id);
       setResult(final);
 
-      // Present summary + details
       push({
         role: "bot",
         content: (
@@ -236,7 +213,6 @@ export default function AIConsole() {
               {typeof final.score === "number" ? final.score.toFixed(2) : "-"} /
               10
             </div>
-
             {Array.isArray(final.breakdown) && (
               <div className="mt-3 max-h-56 overflow-auto rounded-2xl border border-black/10 dark:border-white/10">
                 <table className="w-full text-xs">
@@ -272,7 +248,6 @@ export default function AIConsole() {
                 </table>
               </div>
             )}
-
             {final.gaps && (
               <div className="mt-3 text-xs opacity-80 space-y-1">
                 <div>
@@ -288,7 +263,6 @@ export default function AIConsole() {
         ),
       });
     } catch (e: any) {
-      // Friendly error bubble
       push({
         role: "bot",
         content: (
@@ -304,20 +278,21 @@ export default function AIConsole() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      {/* Main AI panel */}
       <div className="relative rounded-[28px] border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 shadow-xl overflow-hidden">
-        {/* Soft background blobs */}
         <div className="pointer-events-none absolute -z-10 -top-24 -start-24 size-72 rounded-full bg-blue-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -z-10 -bottom-24 -end-24 size-72 rounded-full bg-purple-200/40 blur-3xl" />
 
-        {/* Header bar */}
         <div className="flex items-center justify-between px-2 pb-3">
           <div className="font-semibold">AI • {t(lang, "app")}</div>
           <div className="text-xs opacity-60">Chat Console</div>
         </div>
 
-        {/* Messages */}
-        <div className="space-y-2 max-h-[55vh] overflow-y-auto pe-1">
+        {/* الرسائل */}
+        <div
+          ref={listRef}
+          className="space-y-2 max-h-[55vh] overflow-y-auto pe-1"
+          aria-live="polite"
+        >
           <AnimatePresence initial={false}>
             {messages.map((m) => (
               <motion.div
@@ -348,9 +323,8 @@ export default function AIConsole() {
           )}
         </div>
 
-        {/* Controls */}
+        {/* التحكم */}
         <div className="mt-3 grid gap-2">
-          {/* Optional title/description */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
               placeholder={
@@ -372,17 +346,22 @@ export default function AIConsole() {
             />
           </div>
 
-          {/* Requirements box */}
           <div className="rounded-2xl border p-2 bg-white/60 dark:bg-white/10">
             <div className="text-xs opacity-70 mb-1">
               {lang === "ar"
                 ? "Requirements (سطر لكل متطلب، اكتب must/وزن اختياريًا)"
                 : "Requirements (one per line, you can add 'must' and/or a weight)"}
             </div>
+
+            {/* RequirementPicker كمُدخل سريع */}
+            <div className="mb-2">
+              <RequirementPicker onAdd={onQuickAdd} />
+            </div>
+
             <textarea
               value={reqText}
               onChange={(e) => setReqText(e.target.value)}
-              rows={3}
+              rows={4}
               placeholder={
                 lang === "ar"
                   ? `مثال:\nReact, must, 2\nTypeScript, 1\nTailwind`
@@ -444,7 +423,6 @@ export default function AIConsole() {
         </div>
       </div>
 
-      {/* Simple footer */}
       <div className="text-xs opacity-60 text-center mt-4">
         Next.js • Tailwind • Motion
       </div>

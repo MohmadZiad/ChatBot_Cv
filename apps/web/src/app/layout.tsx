@@ -28,6 +28,26 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <head>
+        {/* تهيئة اللغة/الاتجاه والثيم مبكرًا جدًا لتفادي الفلاش */}
+        <script
+          // سكربت متزامن مسموح داخل <head>
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var ls = window.localStorage;
+                var lang = (ls.getItem("lang") || "ar");
+                var theme = (ls.getItem("theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+                document.documentElement.setAttribute("lang", lang);
+                document.documentElement.setAttribute("dir", lang === "ar" ? "rtl" : "ltr");
+                if (theme === "dark") document.documentElement.classList.add("dark");
+                else document.documentElement.classList.remove("dark");
+              } catch(_) {}
+            `,
+          }}
+        />
+      </head>
+
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh bg-gradient-to-br from-[#f8fafc] via-white to-[#eef2ff] dark:from-[#0b0b0f] dark:via-black dark:to-[#0c0f1a] text-foreground`}
       >
@@ -49,7 +69,6 @@ export default function RootLayout({
             <span className="font-mono">Next.js • Tailwind • Motion</span>
           </div>
         </footer>
-        {/* الزر العائم + نافذة الشات */}
         <Chatbot />
       </body>
     </html>

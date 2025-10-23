@@ -1,7 +1,8 @@
-'use client';
-import * as React from 'react';
-import { useParams } from 'next/navigation';
-import { analysesApi, type Analysis } from '@/services/api/analyses';
+// apps/web/src/app/analysis/[id]/page.tsx
+"use client";
+import * as React from "react";
+import { useParams } from "next/navigation";
+import { analysesApi, type Analysis } from "@/services/api/analyses";
 
 export default function ResultDetail() {
   const params = useParams<{ id: string }>();
@@ -10,54 +11,79 @@ export default function ResultDetail() {
 
   React.useEffect(() => {
     if (!params?.id) return;
-    analysesApi.get(params.id).then(setData).catch(e => alert(e.message)).finally(()=>setLoading(false));
+    analysesApi
+      .get(params.id)
+      .then(setData)
+      .catch((e) => alert(e.message))
+      .finally(() => setLoading(false));
   }, [params?.id]);
 
-  if (loading) return <div style={{ maxWidth: 900, margin: '0 auto' }}>Loading...</div>;
-  if (!data) return <div style={{ maxWidth: 900, margin: '0 auto' }}>Not found</div>;
+  if (loading) return <div className="max-w-3xl mx-auto">Loading...</div>;
+  if (!data) return <div className="max-w-3xl mx-auto">Not found</div>;
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>نتيجة التحليل</h1>
-      <div style={{ border:'1px solid #ddd', borderRadius:8, padding:12, marginBottom:12 }}>
-        <div>الحالة: <b>{data.status}</b></div>
-        <div>Score (0..10): <b>{typeof data.score === 'number' ? data.score.toFixed(2) : '-'}</b></div>
-        {data.model && <div style={{ fontSize: 12, color:'#777' }}>model: {data.model}</div>}
+    <div className="max-w-3xl mx-auto">
+      <h1 className="text-lg font-bold mb-3">نتيجة التحليل</h1>
+
+      <div className="border rounded-xl p-4 mb-4">
+        <div>
+          الحالة: <b>{data.status}</b>
+        </div>
+        <div>
+          Score (0..10):{" "}
+          <b>{typeof data.score === "number" ? data.score.toFixed(2) : "-"}</b>
+        </div>
+        {data.model && (
+          <div className="text-xs text-black/60 dark:text-white/60 mt-1">
+            model: {data.model}
+          </div>
+        )}
       </div>
 
       {Array.isArray(data.breakdown) && (
-        <div style={{ marginTop: 10 }}>
-          <h2 style={{ fontWeight:600, marginBottom:8 }}>Per requirement</h2>
-          <table style={{ width: '100%', borderCollapse:'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background:'#f8fafc' }}>
-                <th style={{ textAlign:'left', padding:8, border:'1px solid #eee' }}>Requirement</th>
-                <th style={{ padding:8, border:'1px solid #eee' }}>Must</th>
-                <th style={{ padding:8, border:'1px solid #eee' }}>Weight</th>
-                <th style={{ padding:8, border:'1px solid #eee' }}>Similarity</th>
-                <th style={{ padding:8, border:'1px solid #eee' }}>Score/10</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.breakdown.map((r:any, idx:number) => (
-                <tr key={idx}>
-                  <td style={{ padding:8, border:'1px solid #eee' }}>{r.requirement}</td>
-                  <td style={{ padding:8, textAlign:'center', border:'1px solid #eee' }}>{r.mustHave ? '✓' : ''}</td>
-                  <td style={{ padding:8, textAlign:'center', border:'1px solid #eee' }}>{r.weight}</td>
-                  <td style={{ padding:8, textAlign:'center', border:'1px solid #eee' }}>{(r.similarity*100).toFixed(1)}%</td>
-                  <td style={{ padding:8, textAlign:'center', border:'1px solid #eee' }}>{r.score10?.toFixed?.(2) ?? '-'}</td>
+        <div className="mt-3">
+          <h2 className="font-semibold mb-2">Per requirement</h2>
+          <div className="rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-black/5 dark:bg-white/10">
+                <tr>
+                  <th className="p-2 text-start">Requirement</th>
+                  <th className="p-2">Must</th>
+                  <th className="p-2">Weight</th>
+                  <th className="p-2">Similarity</th>
+                  <th className="p-2">Score/10</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.breakdown.map((r: any, idx: number) => (
+                  <tr key={idx} className="border-t">
+                    <td className="p-2">{r.requirement}</td>
+                    <td className="p-2 text-center">{r.mustHave ? "✓" : ""}</td>
+                    <td className="p-2 text-center">{r.weight}</td>
+                    <td className="p-2 text-center">
+                      {(r.similarity * 100).toFixed(1)}%
+                    </td>
+                    <td className="p-2 text-center">
+                      {r.score10?.toFixed?.(2) ?? "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {data.gaps && (
-        <div style={{ marginTop: 10 }}>
-          <h2 style={{ fontWeight:600, marginBottom:6 }}>Gaps</h2>
-          <div style={{ fontSize: 14 }}><b>Must-have missing:</b> {data.gaps.mustHaveMissing?.join(', ') || '—'}</div>
-          <div style={{ fontSize: 14 }}><b>Improve:</b> {data.gaps.improve?.join(', ') || '—'}</div>
+        <div className="mt-4 space-y-1">
+          <h2 className="font-semibold">Gaps</h2>
+          <div className="text-sm">
+            <b>Must-have missing:</b>{" "}
+            {data.gaps.mustHaveMissing?.join(", ") || "—"}
+          </div>
+          <div className="text-sm">
+            <b>Improve:</b> {data.gaps.improve?.join(", ") || "—"}
+          </div>
         </div>
       )}
     </div>

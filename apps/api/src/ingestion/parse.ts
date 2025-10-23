@@ -1,5 +1,6 @@
 // apps/api/src/ingestion/parse.ts
 import path from "node:path";
+import fs from "node:fs/promises";
 import mammoth from "mammoth";
 
 /* =========================
@@ -41,7 +42,7 @@ async function getTesseract() {
 let _canvas: any | null = null;
 async function getCanvas() {
   if (_canvas) return _canvas;
-  const mod = await import("canvas"); // canvas@3 works out-of-the-box on Windows
+  const mod = await import("canvas"); // canvas@3 works on Windows without system deps
   _canvas = mod;
   return _canvas;
 }
@@ -49,7 +50,7 @@ async function getCanvas() {
 let _wordExtractor: any | null = null;
 async function getWordExtractor() {
   if (_wordExtractor) return _wordExtractor;
-  const mod = await import("word-extractor"); // لدعم صيغة DOC القديمة
+  const mod = await import("word-extractor"); // DOC (قديم)
   _wordExtractor = (mod as any).default ?? (mod as any);
   return _wordExtractor;
 }
@@ -72,11 +73,19 @@ function env(key: string, fallback?: string) {
   return v == null || v === "" ? fallback : v;
 }
 
+function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
+  return parts
+    .filter(Boolean)
+    .map((s) => (s as string).trim())
+    .filter(Boolean)
+    .join(sep);
+}
+
 /* =========================
    PDF extractors
 ========================= */
 
-/** pdf-parse (نص مضمّن) */
+/** 1) pdf-parse (نص مضمّن سريع) */
 async function extractTextWithPdfParse(
   buf: Buffer,
   log?: (m: any) => void
@@ -93,7 +102,7 @@ async function extractTextWithPdfParse(
   }
 }
 
-/** pdfjs-dist (نص مضمّن) — متوافق مع Node: نعطّل الـ worker */
+/** 2) pdfjs-dist (نص مضمّن + الروابط من Annotations) */
 async function extractTextWithPdfJs(
   buf: Buffer,
   log?: (m: any) => void
@@ -103,36 +112,56 @@ async function extractTextWithPdfJs(
     log?.({ step: "pdfjs", error: "failed to load pdfjs-dist" });
     return "";
   }
-
   try {
-    if (pdfjsLib?.GlobalWorkerOptions) {
-      // في Node لا نستخدم worker إطلاقًا
+    if (pdfjsLib?.GlobalWorkerOptions)
       pdfjsLib.GlobalWorkerOptions.workerSrc = undefined as any;
-    }
   } catch {}
 
   try {
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(buf),
-      disableWorker: true, // أهم سطر لبيئة Node
+      disableWorker: true,
       useSystemFonts: true,
       isEvalSupported: false,
       verbosity: (pdfjsLib as any).VerbosityLevel?.errors ?? 0,
     });
-
     const doc = await loadingTask.promise;
 
+    const linkLines: string[] = [];
     let text = "";
+
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
+
+      // نص الصفحة
       const content = await page.getTextContent({ normalizeWhitespace: true });
       text += content.items.map((it: any) => it?.str ?? "").join(" ") + "\n";
+
+      // روابط الصفحة (URI annotations)
+      try {
+        const ann = await page.getAnnotations();
+        for (const a of ann) {
+          const uri = (a as any)?.url || (a as any)?.unsafeUrl;
+          const title = (a as any)?.title || (a as any)?.contents || "";
+          if (uri) linkLines.push(title ? `${title}: ${uri}` : uri);
+        }
+      } catch {}
+
       (page as any)?.cleanup?.();
     }
     (doc as any)?.cleanup?.();
 
-    const t = text.trim();
-    log?.({ step: "pdfjs", pages: doc.numPages, length: t.length });
+    const out = joinParts(
+      [text, linkLines.length ? "\nLinks:\n" + linkLines.join("\n") : ""],
+      "\n"
+    );
+    const t = out.trim();
+    log?.({
+      step: "pdfjs",
+      pages: doc.numPages,
+      length: t.length,
+      links: linkLines.length,
+    });
     return t;
   } catch (e: any) {
     log?.({ step: "pdfjs", error: String(e?.message ?? e) });
@@ -140,83 +169,124 @@ async function extractTextWithPdfJs(
   }
 }
 
-async function renderPageToPngBuffer(pdfjsLib: any, page: any, scale = 2) {
+async function renderPageToPngBuffer(
+  pdfjsLib: any,
+  page: any,
+  scale = 2,
+  debugFirst = false
+) {
   const { createCanvas } = await getCanvas();
   const viewport = page.getViewport({ scale });
   const canvas = createCanvas(viewport.width, viewport.height);
   const ctx = canvas.getContext("2d");
+
+  // رسم الصفحة
   await page.render({ canvasContext: ctx, viewport }).promise;
-  return canvas.toBuffer("image/png");
+
+  // (اختياري) تحسين بسيط للصورة قبل OCR: تحويل لتدرّج رمادي + عتبة
+  try {
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = img.data;
+    // threshold بسيط (تلقائي نسبيًا)
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4)
+      sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
+    const avg = sum / (data.length / 4);
+    const thresh = Math.max(110, Math.min(180, avg)); // 110..180
+    for (let i = 0; i < data.length; i += 4) {
+      const g = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      const v = g > thresh ? 255 : 0;
+      data[i] = data[i + 1] = data[i + 2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+  } catch {}
+
+  const png = canvas.toBuffer("image/png");
+
+  // احفظ أول صفحة للمعاينة لو وضع الديباغ مفعّل
+  if (debugFirst) {
+    try {
+      const dir = path.join(process.cwd(), "storage", "ocr-debug");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "page1-preview.png"), png);
+    } catch {}
+  }
+
+  return png;
 }
 
-/** OCR لصفحات PDF — باستخدام Tesseract Worker ومسار لغات محلي */
+/** 3) OCR لصفحات PDF — Tesseract Worker + معلمات محسّنة + Debug */
 async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const pdfjsLib = await loadPdfJs();
   if (!pdfjsLib) {
     log?.({ step: "ocr", error: "pdfjs not loaded" });
     return "";
   }
-
   try {
-    if (pdfjsLib?.GlobalWorkerOptions) {
+    if (pdfjsLib?.GlobalWorkerOptions)
       pdfjsLib.GlobalWorkerOptions.workerSrc = undefined as any;
-    }
   } catch {}
 
   const OCR_LANGS = env("OCR_LANGS", "eng+ara")!;
-  const MAX_PAGES = Number(env("OCR_MAX_PAGES", "10"));
-  const SCALE = Number(env("OCR_RENDER_SCALE", "2"));
+  const MAX_PAGES = Number(env("OCR_MAX_PAGES", "30"));
+  const SCALE = Number(env("OCR_RENDER_SCALE", "3")); // 2–4
   const TESSDATA = env(
     "TESSDATA_PATH",
     path.join(process.cwd(), "apps/api/assets/tessdata")
   )!;
+  const DEBUG = env("OCR_DEBUG", "0") !== "0";
 
   try {
-    const Tesseract = await getTesseract();
-    const { createWorker } = Tesseract;
-
-    // ✨ worker بمسارات محلية (بدون تنزيل)
+    const { createWorker } = await getTesseract();
     const worker = await createWorker({
       langPath: TESSDATA,
       cacheMethod: "readOnly",
-      // logger: (m: any) => log?.({ step: "ocr", progress: m }),
+      // logger: DEBUG ? (m:any)=>log?.({ step:"ocr", tesseract:m }) : undefined,
     });
 
     await worker.loadLanguage(OCR_LANGS);
     await worker.initialize(OCR_LANGS);
 
-    try {
-      const loadingTask = pdfjsLib.getDocument({
-        data: new Uint8Array(buf),
-        disableWorker: true,
-      });
-      const doc = await loadingTask.promise;
+    // إعدادات قوية للـ OCR
+    await worker.setParameters({
+      tessedit_pageseg_mode: "6", // فقرة نص واحد
+      tessedit_ocr_engine_mode: "1", // LSTM-only
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
+    });
 
-      let text = "";
-      const limit = Math.min(doc.numPages, MAX_PAGES);
-      for (let i = 1; i <= limit; i++) {
-        const page = await doc.getPage(i);
-        const png = await renderPageToPngBuffer(pdfjsLib, page, SCALE);
-        const {
-          data: { text: t },
-        } = await worker.recognize(png);
-        if (t) text += t + "\n";
-        (page as any)?.cleanup?.();
-      }
-      (doc as any)?.cleanup?.();
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buf),
+      disableWorker: true,
+    });
+    const doc = await loadingTask.promise;
 
-      await worker.terminate();
+    let out = "";
+    const pages = Math.min(doc.numPages, MAX_PAGES);
 
-      const out = text.trim();
-      log?.({ step: "ocr", pages: limit, length: out.length });
-      return out;
-    } catch (inner) {
-      await worker.terminate().catch(() => {});
-      log?.({ step: "ocr", error: String((inner as any)?.message ?? inner) });
-      return "";
+    for (let i = 1; i <= pages; i++) {
+      const page = await doc.getPage(i);
+      const png = await renderPageToPngBuffer(
+        pdfjsLib,
+        page,
+        SCALE,
+        DEBUG && i === 1
+      );
+      const {
+        data: { text },
+      } = await worker.recognize(png);
+      out += (text || "") + "\n";
+      (page as any)?.cleanup?.();
     }
-  } catch (e) {
-    log?.({ step: "ocr", error: String(e) });
+    (doc as any)?.cleanup?.();
+
+    await worker.terminate();
+
+    out = out.replace(/\u0000/g, "").trim();
+    log?.({ step: "ocr", pages, length: out.length });
+    return out;
+  } catch (e: any) {
+    log?.({ step: "ocr", error: String(e?.message ?? e) });
     return "";
   }
 }
@@ -255,8 +325,7 @@ export async function parsePlainText(buf: Buffer): Promise<string> {
 
 export async function parseImageWithOCR(buf: Buffer): Promise<string> {
   try {
-    const Tesseract = await getTesseract();
-    const { createWorker } = Tesseract;
+    const { createWorker } = await getTesseract();
     const OCR_LANGS = env("OCR_LANGS", "eng+ara")!;
     const TESSDATA = env(
       "TESSDATA_PATH",
@@ -270,9 +339,15 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
     await worker.loadLanguage(OCR_LANGS);
     await worker.initialize(OCR_LANGS);
 
+    await worker.setParameters({
+      tessedit_pageseg_mode: "6",
+      tessedit_ocr_engine_mode: "1",
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300",
+    });
+
     const { data } = await worker.recognize(buf);
     await worker.terminate();
-
     return (data?.text || "").trim();
   } catch {
     return "";
@@ -283,7 +358,7 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
    Public APIs
 ========================= */
 
-/** قراءة PDF — نجرب الثلاثة ونختار الأطول */
+/** قراءة PDF — نجرب 3 طرق (parse → pdfjs+links → OCR) ونختار الأطول */
 export async function parsePDF(input: unknown): Promise<string> {
   const buf = toBuf(input);
   const log = (m: any) => console.log("[PDF-EXTRACT]", m);
@@ -304,7 +379,7 @@ export async function parsePDF(input: unknown): Promise<string> {
 
 /**
  * parseAny: واجهة موحّدة — تحدد المستخرج حسب الـ mime/الامتداد
- * وتفاضل دائمًا على "الأطول".
+ * ونفاضل دائمًا على "الأطول".
  */
 export async function parseAny(
   input: unknown,
