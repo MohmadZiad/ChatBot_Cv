@@ -1,4 +1,5 @@
 // apps/api/src/ingestion/parse.ts
+import path from "node:path";
 import mammoth from "mammoth";
 
 /* =========================
@@ -40,8 +41,7 @@ async function getTesseract() {
 let _canvas: any | null = null;
 async function getCanvas() {
   if (_canvas) return _canvas;
-  // node-canvas
-  const mod = await import("canvas");
+  const mod = await import("canvas"); // canvas@3 works out-of-the-box on Windows
   _canvas = mod;
   return _canvas;
 }
@@ -49,7 +49,7 @@ async function getCanvas() {
 let _wordExtractor: any | null = null;
 async function getWordExtractor() {
   if (_wordExtractor) return _wordExtractor;
-  const mod = await import("word-extractor"); // لدعم DOC القديم
+  const mod = await import("word-extractor"); // لدعم صيغة DOC القديمة
   _wordExtractor = (mod as any).default ?? (mod as any);
   return _wordExtractor;
 }
@@ -65,6 +65,11 @@ function toBuf(input: unknown): Buffer {
   return Buffer.isBuffer(input)
     ? (input as Buffer)
     : Buffer.from(input as ArrayBufferLike);
+}
+
+function env(key: string, fallback?: string) {
+  const v = process.env[key];
+  return v == null || v === "" ? fallback : v;
 }
 
 /* =========================
@@ -144,7 +149,7 @@ async function renderPageToPngBuffer(pdfjsLib: any, page: any, scale = 2) {
   return canvas.toBuffer("image/png");
 }
 
-/** OCR لصفحات PDF */
+/** OCR لصفحات PDF — باستخدام Tesseract Worker ومسار لغات محلي */
 async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const pdfjsLib = await loadPdfJs();
   if (!pdfjsLib) {
@@ -158,32 +163,58 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     }
   } catch {}
 
+  const OCR_LANGS = env("OCR_LANGS", "eng+ara")!;
+  const MAX_PAGES = Number(env("OCR_MAX_PAGES", "10"));
+  const SCALE = Number(env("OCR_RENDER_SCALE", "2"));
+  const TESSDATA = env(
+    "TESSDATA_PATH",
+    path.join(process.cwd(), "apps/api/assets/tessdata")
+  )!;
+
   try {
     const Tesseract = await getTesseract();
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buf),
-      disableWorker: true,
+    const { createWorker } = Tesseract;
+
+    // ✨ worker بمسارات محلية (بدون تنزيل)
+    const worker = await createWorker({
+      langPath: TESSDATA,
+      cacheMethod: "readOnly",
+      // logger: (m: any) => log?.({ step: "ocr", progress: m }),
     });
-    const doc = await loadingTask.promise;
 
-    const OCR_LANGS = process.env.OCR_LANGS || "eng+ara";
-    const MAX_PAGES = Number(process.env.OCR_MAX_PAGES || "10");
-    const SCALE = Number(process.env.OCR_RENDER_SCALE || "2");
+    await worker.loadLanguage(OCR_LANGS);
+    await worker.initialize(OCR_LANGS);
 
-    let text = "";
-    const limit = Math.min(doc.numPages, MAX_PAGES);
-    for (let i = 1; i <= limit; i++) {
-      const page = await doc.getPage(i);
-      const png = await renderPageToPngBuffer(pdfjsLib, page, SCALE);
-      const { data } = await Tesseract.recognize(png, OCR_LANGS);
-      if (data?.text) text += data.text + "\n";
-      (page as any)?.cleanup?.();
+    try {
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(buf),
+        disableWorker: true,
+      });
+      const doc = await loadingTask.promise;
+
+      let text = "";
+      const limit = Math.min(doc.numPages, MAX_PAGES);
+      for (let i = 1; i <= limit; i++) {
+        const page = await doc.getPage(i);
+        const png = await renderPageToPngBuffer(pdfjsLib, page, SCALE);
+        const {
+          data: { text: t },
+        } = await worker.recognize(png);
+        if (t) text += t + "\n";
+        (page as any)?.cleanup?.();
+      }
+      (doc as any)?.cleanup?.();
+
+      await worker.terminate();
+
+      const out = text.trim();
+      log?.({ step: "ocr", pages: limit, length: out.length });
+      return out;
+    } catch (inner) {
+      await worker.terminate().catch(() => {});
+      log?.({ step: "ocr", error: String((inner as any)?.message ?? inner) });
+      return "";
     }
-    (doc as any)?.cleanup?.();
-
-    const t = text.trim();
-    log?.({ step: "ocr", pages: limit, length: t.length });
-    return t;
   } catch (e) {
     log?.({ step: "ocr", error: String(e) });
     return "";
@@ -225,8 +256,23 @@ export async function parsePlainText(buf: Buffer): Promise<string> {
 export async function parseImageWithOCR(buf: Buffer): Promise<string> {
   try {
     const Tesseract = await getTesseract();
-    const OCR_LANGS = process.env.OCR_LANGS || "eng+ara";
-    const { data } = await Tesseract.recognize(buf, OCR_LANGS);
+    const { createWorker } = Tesseract;
+    const OCR_LANGS = env("OCR_LANGS", "eng+ara")!;
+    const TESSDATA = env(
+      "TESSDATA_PATH",
+      path.join(process.cwd(), "apps/api/assets/tessdata")
+    )!;
+
+    const worker = await createWorker({
+      langPath: TESSDATA,
+      cacheMethod: "readOnly",
+    });
+    await worker.loadLanguage(OCR_LANGS);
+    await worker.initialize(OCR_LANGS);
+
+    const { data } = await worker.recognize(buf);
+    await worker.terminate();
+
     return (data?.text || "").trim();
   } catch {
     return "";

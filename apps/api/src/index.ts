@@ -1,31 +1,28 @@
+// apps/api/src/index.ts
+import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { registerRoutes } from "./routes/index.js";
 
-const app = Fastify({
-  logger: true,
-});
+const app = Fastify({ logger: true });
 
-// CORS أثناء التطوير
+// CORS أثناء التطوير/الإنتاج
 await app.register(cors, {
-  // ندعم كلا الاسمين: WEB_ORIGIN و CORS_ORIGIN
   origin: process.env.WEB_ORIGIN || process.env.CORS_ORIGIN || true,
   credentials: true,
 });
 
-// رفع ملفات حتى 20MB
+// تمكين الرفع (20MB)
 await app.register(multipart, {
-  limits: {
-    fileSize: 20 * 1024 * 1024,
-    files: 1,
-  },
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
   attachFieldsToBody: false,
 });
 
-// سجّل جميع الراوترات
+// سجّل جميع الراوترات (تأكد أن index.js يركّب cvRoute تحت /api/cv)
 registerRoutes(app);
 
+// Error handler موحّد
 app.setErrorHandler((err, req, reply) => {
   req.log.error({ err, url: req.url, method: req.method }, "unhandled error");
   const status = (err as any)?.status ?? 500;
@@ -40,6 +37,13 @@ try {
   await app.listen({ port, host });
   app.log.info(`🚀 API listening on http://localhost:${port}`);
   app.log.info(`📁 File upload limit: 20MB`);
+  app.log.info(
+    {
+      TESSDATA_PATH: process.env.TESSDATA_PATH,
+      OCR_LANGS: process.env.OCR_LANGS,
+    },
+    "OCR config"
+  );
 } catch (err) {
   app.log.error(err);
   process.exit(1);

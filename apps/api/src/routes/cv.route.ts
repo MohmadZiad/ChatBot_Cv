@@ -3,23 +3,17 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { fileTypeFromBuffer } from "file-type";
 import { putToStorage } from "../ingestion/upload.js";
-import { parseAny } from "../ingestion/parse.js"; // ← واجهة موحّدة لكل الأنواع
+import { parseAny } from "../ingestion/parse.js";
 import { chunkText } from "../ingestion/chunk.js";
 import { detectLang } from "../nlp/lang.js";
 
 type HttpError = Error & { status?: number; code?: string };
 
-const unprocessable = (message: string, code = "UNPROCESSABLE"): HttpError => {
-  const e: HttpError = new Error(message);
-  e.status = 422;
-  e.code = code;
-  return e;
-};
-
-// حدّ أدنى منطقي بعد الـ OCR (يمكن ضبطه من ENV)
-const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "80");
+// حدّ أدنى منطقي بعد الـ OCR (قابل للضبط)
+const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
 
 export async function cvRoute(app: FastifyInstance) {
+  // POST /upload  (يُركّب عادةً تحت: /api/cv/upload)
   app.post("/upload", async (req, reply) => {
     try {
       app.log.info(
@@ -31,11 +25,8 @@ export async function cvRoute(app: FastifyInstance) {
         "CV upload request received"
       );
 
-      // 1) استلام الملف (20MB)
-      const mp = await req.file({
-        limits: { fileSize: 20 * 1024 * 1024 },
-      });
-
+      // 1) استلام الملف (حد 20MB)
+      const mp = await req.file({ limits: { fileSize: 20 * 1024 * 1024 } });
       if (!mp) {
         app.log.warn("No file received in multipart request");
         return reply.code(400).send({
@@ -68,7 +59,7 @@ export async function cvRoute(app: FastifyInstance) {
       const original = mp.filename ?? "upload.bin";
       app.log.info({ mime, original }, "File type detected");
 
-      // 4) تخزين الملف أولًا (نحتفظ به سواء نجح الاستخراج أم لا)
+      // 4) تخزين الملف دائمًا (نحتفظ به مهما كانت نتيجة الاستخراج)
       const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
       app.log.info({ path, publicUrl }, "File stored successfully");
 
@@ -76,72 +67,57 @@ export async function cvRoute(app: FastifyInstance) {
       let text = "";
       try {
         text = await parseAny(fileBuf, mime, original);
-      } catch (parseErr: any) {
-        app.log.error({ err: parseErr }, "Error parsing file");
-        throw unprocessable(
-          `فشل استخراج النص من الملف: ${parseErr.message}`,
-          "PARSE_ERROR"
-        );
+      } catch (e: any) {
+        app.log.error({ err: e }, "Error parsing file");
+        // حتى لو فشل الاستخراج، سننشئ سجل CV ونرجع 201 parsed:false
+        text = "";
       }
-
       text = (text || "").trim();
-      app.log.info({ textLength: text.length }, "Text extracted");
+      const textLength = text.length;
+      app.log.info({ textLength }, "Text extracted");
 
-      // 6) التحقق من كفاية النص
-      if (!text || text.length < MIN_TEXT) {
-        app.log.warn(
-          { textLength: text.length, min: MIN_TEXT },
-          "Insufficient text extracted"
-        );
-        return reply.code(422).send({
-          ok: false,
-          code: "NO_EXTRACTABLE_TEXT",
-          message:
-            "لم أستطع استخراج نص كافٍ من الملف. إن كان PDF/صورة فربما الجودة منخفضة — جرّب نسخة أوضح أو صيغة DOCX/PDF أنقى.",
-          storagePath: path,
-          publicUrl,
-          extractedLength: text.length,
-        });
-      }
-
-      // 7) تحديد اللغة
-      const lang = detectLang(text);
-      app.log.info({ lang }, "Language detected");
-
-      // 8) إنشاء سجل CV
+      // 6) أنشئ سجلّ CV دائماً (حتى لو النص قليل) لتُعيد cvId
+      const lang = textLength ? detectLang(text) : null;
       const cv = await prisma.cV.create({
         data: {
           storagePath: path,
           originalFilename: original,
-          parsedText: text.slice(0, 50_000),
+          parsedText: textLength ? text.slice(0, 50_000) : null,
           lang,
         },
       });
       app.log.info({ cvId: cv.id }, "CV record created");
 
-      // 9) تقطيع النص وتخزين الأجزاء
-      const chunksData = chunkText(text, 1000).map((c) => ({
-        cvId: cv.id,
-        section: c.section,
-        content: c.content,
-        tokenCount: Math.ceil(c.content.length / 4),
-      }));
-      const parts = chunksData.length;
-
-      if (parts > 0) {
-        await prisma.cVChunk.createMany({ data: chunksData });
-        app.log.info({ parts }, "CV chunks created");
+      // 7) إن كان النص كافيًا → قسّمه وخزّن الأجزاء، وإلا لا تنشئ أجزاء
+      let parts = 0;
+      if (textLength >= MIN_TEXT) {
+        const chunksData = chunkText(text, 1000).map((c) => ({
+          cvId: cv.id,
+          section: c.section,
+          content: c.content,
+          tokenCount: Math.ceil(c.content.length / 4),
+        }));
+        parts = chunksData.length;
+        if (parts > 0) {
+          await prisma.cVChunk.createMany({ data: chunksData });
+          app.log.info({ parts }, "CV chunks created");
+        }
+      } else {
+        app.log.warn(
+          { textLength, min: MIN_TEXT },
+          "Insufficient text extracted; returning parsed:false"
+        );
       }
 
-      // 10) ردّ النجاح
+      // 8) ردّ النجاح دائمًا بـ 201
       return reply.code(201).send({
         ok: true,
         cvId: cv.id,
         parts,
         storagePath: path,
         publicUrl,
-        parsed: true,
-        textLength: text.length,
+        parsed: textLength >= MIN_TEXT,
+        textLength,
       });
     } catch (err: any) {
       app.log.error({ err, stack: err.stack }, "CV upload failed");
@@ -152,7 +128,7 @@ export async function cvRoute(app: FastifyInstance) {
     }
   });
 
-  // قائمة بأحدث الملفات
+  // GET /  → أحدث الملفات
   app.get("/", async () => {
     const cvs = await prisma.cV.findMany({
       orderBy: { createdAt: "desc" },
@@ -161,7 +137,7 @@ export async function cvRoute(app: FastifyInstance) {
     return { items: cvs };
   });
 
-  // جلب ملف معيّن
+  // GET /:id → سجلّ واحد مع الأجزاء
   app.get("/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const cv = await prisma.cV.findUnique({
