@@ -1,18 +1,39 @@
 // apps/api/src/utils/debug.ts
 const DEBUG_RAW = process.env.DEBUG || "";
 
-function isEnabled(scope: string) {
-  if (!DEBUG_RAW) return false;
-  const tokens = DEBUG_RAW.split(/[,\s]+/)
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean);
-  if (tokens.length === 0) return false;
-  if (tokens.includes("*") || tokens.includes("1")) return true;
-  if (tokens.some((t) => t === "true" || t === "yes")) return true;
-  return tokens.some((token) => scope.toLowerCase().startsWith(token));
+const TOKENS = DEBUG_RAW.split(/[,\s]+/)
+  .map((token) => token.trim().toLowerCase())
+  .filter(Boolean);
+
+const ALWAYS_ON = new Set(["*", "1", "true", "yes"]);
+
+function matchesScope(scope: string, token: string) {
+  if (ALWAYS_ON.has(token)) return true;
+
+  const normalizedScope = scope.replace(/:/g, ".");
+  const normalizedToken = token.replace(/:/g, ".");
+
+  if (normalizedToken.endsWith("*")) {
+    const base = normalizedToken.slice(0, -1);
+    if (!base) return true;
+    return normalizedScope.startsWith(base);
+  }
+
+  if (normalizedScope === normalizedToken) return true;
+  return normalizedScope.startsWith(`${normalizedToken}.`);
 }
 
-export function debugLog(scope: string, message: string, data?: Record<string, unknown>) {
+function isEnabled(scope: string) {
+  if (!TOKENS.length) return false;
+  const normalizedScope = scope.toLowerCase();
+  return TOKENS.some((token) => matchesScope(normalizedScope, token));
+}
+
+export function debugLog(
+  scope: string,
+  message: string,
+  data?: Record<string, unknown>
+) {
   if (!isEnabled(scope)) return;
   const payload = data ? { ...data } : undefined;
   if (payload) {

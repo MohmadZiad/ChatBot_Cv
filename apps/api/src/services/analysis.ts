@@ -8,6 +8,11 @@ import { debugLog } from "../utils/debug.js";
 
 type HttpError = Error & { status?: number; code?: string };
 
+const EMBEDDING_MODEL =
+  process.env.EMBEDDINGS_MODEL ||
+  process.env.EMBEDDING_MODEL ||
+  "text-embedding-3-small";
+
 function httpError(
   message: string,
   status = 422,
@@ -57,7 +62,13 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
   let reqVecs: number[][];
   try {
-    reqVecs = await embedTexts(reqs.map((r) => r.requirement));
+    debugLog("analysis.run", "requesting embeddings", {
+      jobId,
+      cvId,
+      model: EMBEDDING_MODEL,
+      requirementCount: reqs.length,
+    });
+    reqVecs = await embedTexts(reqs.map((r) => r.requirement), EMBEDDING_MODEL);
   } catch (e: any) {
     const err: HttpError = new Error(
       `OpenAI embeddings failed: ${e?.message || e}`
@@ -66,6 +77,12 @@ export async function runAnalysis(jobId: string, cvId: string) {
     err.code = "EMBEDDINGS_FAILED";
     throw err;
   }
+
+  debugLog("analysis.run", "computed embeddings", {
+    jobId,
+    cvId,
+    model: EMBEDDING_MODEL,
+  });
 
   const perReq: any[] = [];
   const evidence: any[] = [];
@@ -125,7 +142,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       breakdown: perReq as unknown as Prisma.InputJsonValue,
       evidence: evidence as Prisma.InputJsonValue,
       gaps: buildGaps(perReq) as Prisma.InputJsonValue,
-      model: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
+      model: EMBEDDING_MODEL,
     },
   });
 
