@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { fileTypeFromBuffer } from "file-type";
 import { putToStorage } from "../ingestion/upload.js";
-import { parseAny } from "../ingestion/parse.js";
+import { parseAny, parsePDF } from "../ingestion/parse.js"; // ✅ إضافة parsePDF
 import { chunkText } from "../ingestion/chunk.js";
 import { detectLang } from "../nlp/lang.js";
 
@@ -63,15 +63,21 @@ export async function cvRoute(app: FastifyInstance) {
       const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
       app.log.info({ path, publicUrl }, "File stored successfully");
 
-      // 5) استخراج النص لأي نوع (PDF/DOCX/DOC/صور/TXT…)
+      // 5) استخراج النص - نختار parsePDF للـ PDF فقط
       let text = "";
       try {
-        text = await parseAny(fileBuf, mime, original);
+        if (mime.includes("pdf") || original.toLowerCase().endsWith(".pdf")) {
+          app.log.info("Detected PDF file, using parsePDF()");
+          text = await parsePDF(fileBuf); // ✅ تحليل PDF بعمق
+        } else {
+          app.log.info("Non-PDF file, using parseAny()");
+          text = await parseAny(fileBuf, mime, original);
+        }
       } catch (e: any) {
         app.log.error({ err: e }, "Error parsing file");
-        // حتى لو فشل الاستخراج، سننشئ سجل CV ونرجع 201 parsed:false
         text = "";
       }
+
       text = (text || "").trim();
       const textLength = text.length;
       app.log.info({ textLength }, "Text extracted");
@@ -128,7 +134,7 @@ export async function cvRoute(app: FastifyInstance) {
     }
   });
 
-  // GET /  → أحدث الملفات
+  // GET / → أحدث الملفات
   app.get("/", async () => {
     const cvs = await prisma.cV.findMany({
       orderBy: { createdAt: "desc" },

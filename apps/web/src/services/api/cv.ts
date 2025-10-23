@@ -1,7 +1,8 @@
 // apps/web/src/services/api/cv.ts
 import { http } from "../http";
 
-const ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+const ORIGIN =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || "http://localhost:4000";
 const API = `${ORIGIN}/api`;
 
 export type CV = {
@@ -49,10 +50,9 @@ export const cvApi = {
       sizeInMB: (file.size / (1024 * 1024)).toFixed(2) + " MB",
     });
 
-    // السماح بكل الأنواع — فقط نقيّد الحجم
-    const maxSize = 20 * 1024 * 1024; // 20MB
+    const maxSize = 20 * 1024 * 1024; // 20 MB
     if (file.size > maxSize) {
-      throw new Error("حجم الملف كبير جداً. الحد الأقصى هو 20 ميجابايت.");
+      throw new Error("❌ حجم الملف كبير جداً. الحد الأقصى هو 20 ميجابايت.");
     }
 
     const form = new FormData();
@@ -63,9 +63,8 @@ export const cvApi = {
 
     try {
       const res = await fetch(url, { method: "POST", body: form });
-      console.log("📨 Response status:", res.status, res.statusText);
 
-      // نقرأ الاستجابة بذكاء: JSON أولاً، ثم fallback إلى نص
+      console.log("📨 Response status:", res.status, res.statusText);
       const ct = res.headers.get("content-type") || "";
       let responseData: any = null;
       let rawText = "";
@@ -76,21 +75,19 @@ export const cvApi = {
         rawText = await res.text().catch(() => "");
         try {
           responseData = rawText ? JSON.parse(rawText) : null;
-        } catch {
-          // ليس JSON صالح
-        }
+        } catch {}
       }
 
       if (!res.ok) {
-        const messageFromServer =
+        const msg =
           responseData?.message ||
           rawText ||
-          `خطأ في الرفع: HTTP ${res.status}`;
+          `خطأ أثناء رفع الملف (HTTP ${res.status})`;
         console.error("❌ Upload error payload:", responseData ?? rawText);
-        throw new Error(messageFromServer);
+        throw new Error(msg);
       }
 
-      if (!responseData || responseData.ok !== true) {
+      if (!responseData?.ok) {
         console.warn("⚠️ Unexpected success payload:", responseData);
       }
 
@@ -100,9 +97,12 @@ export const cvApi = {
       console.error("❌ Upload failed:", error);
 
       const msg = (error?.message || "").toLowerCase();
-      if (msg.includes("failed to fetch")) {
+      if (
+        msg.includes("failed to fetch") ||
+        msg.includes("connection refused")
+      ) {
         throw new Error(
-          "فشل الاتصال بالسيرفر. تأكد من تشغيل الـ API على http://localhost:4000 والتأكد من CORS."
+          "🚫 فشل الاتصال بالسيرفر. تأكد من تشغيل الـ API على http://localhost:4000 وتفعيل CORS."
         );
       }
       throw error;

@@ -12,6 +12,7 @@
   "dependencies": {
     "@fastify/cors": "^10.1.0",
     "@fastify/multipart": "^9.2.1",
+    "@google-cloud/documentai": "^9.5.0",
     "@prisma/client": "^6.17.1",
     "@supabase/supabase-js": "^2.76.1",
     "bullmq": "^5.12.0",
@@ -23,7 +24,7 @@
     "mammoth": "^1.11.0",
     "openai": "^4.57.0",
     "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^5.4.296",
+    "pdfjs-dist": "^3.11.174",
     "prisma": "^6.17.1",
     "tesseract.js": "^6.0.1",
     "word-extractor": "^1.0.4",
