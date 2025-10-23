@@ -10,30 +10,49 @@ import { analysesApi, type Analysis } from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 
+/** Chat message shape */
 type Msg = {
   id: string;
   role: "bot" | "user" | "sys";
   content: React.ReactNode;
 };
 
+/** Safe helper: read current language from localStorage on the client only */
+function getLangFromStorage(): Lang {
+  try {
+    if (typeof window !== "undefined") {
+      return (window.localStorage.getItem("lang") as Lang) || "ar";
+    }
+  } catch {
+    // ignore
+  }
+  return "ar";
+}
+
+/**
+ * Language hook
+ * - Avoids reading localStorage during the first render (which can run in SSR)
+ * - Hydrates from localStorage after mount and keeps in sync via `storage` event
+ */
 function useLang(): Lang {
-  const [lang, setLang] = React.useState<Lang>(
-    (localStorage.getItem("lang") as Lang) || "ar"
-  );
+  // Use a stable default for the initial render to avoid "localStorage is not defined"
+  const [lang, setLang] = React.useState<Lang>("ar");
+
   React.useEffect(() => {
-    const h = () => setLang((localStorage.getItem("lang") as Lang) || "ar");
-    window.addEventListener("storage", h);
-    return () => window.removeEventListener("storage", h);
+    // Read the actual value after the component mounts (client-only)
+    setLang(getLangFromStorage());
+
+    // Keep language in sync across tabs/windows
+    const onStorage = () => setLang(getLangFromStorage());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
+
   return lang;
 }
 
+/** Parse requirements from free-form lines: "React, must, 2" / "TypeScript, 1" / "Tailwind" */
 function parseRequirements(text: string): JobRequirement[] {
-  // صيغة مرنة: كل سطر requirement، ممكن يحتوي must/وزن
-  // أمثلة:
-  // React, must, 2
-  // TypeScript, 1
-  // Tailwind
   return text
     .split("\n")
     .map((l) => l.trim())
@@ -55,6 +74,7 @@ export default function AIConsole() {
   const lang = useLang();
   const tt = (k: string) => t(lang, k);
 
+  // Messages shown in the chat area
   const [messages, setMessages] = React.useState<Msg[]>([
     {
       id: "m0",
@@ -65,18 +85,18 @@ export default function AIConsole() {
           <div className="text-sm opacity-80 mt-1">{tt("chat.hello")}</div>
           <ul className="text-xs opacity-70 mt-2 list-disc ps-5">
             <li>
-              1) اكتب متطلبات الوظيفة (سطر لكل Requirement، ضيف{" "}
-              <b>must</b> و/أو وزن مثل: <code>2</code>).
+              1) Write job requirements (one per line). Optionally add{" "}
+              <b>must</b> and a weight like <code>2</code>.
             </li>
-            <li>2) ارفع ملف الـ CV (PDF/DOCX).</li>
-            <li>3) اضغط {tt("chat.run")} — سأعرض لك النتيجة.</li>
+            <li>2) Upload the CV (PDF/DOCX).</li>
+            <li>3) Click {tt("chat.run")} to see the result.</li>
           </ul>
         </div>
       ),
     },
   ]);
 
-  // حالة الجلسة
+  // Session state
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [reqText, setReqText] = React.useState("");
@@ -85,18 +105,20 @@ export default function AIConsole() {
   const [loading, setLoading] = React.useState(false);
   const [result, setResult] = React.useState<Analysis | null>(null);
 
-  // إدراج رسالة
+  /** Push a message to the chat */
   const push = (m: Omit<Msg, "id">) =>
     setMessages((s) => [
       ...s,
       { ...m, id: Math.random().toString(36).slice(2) },
     ]);
 
-  // إرسال متطلبات
+  /** Handle requirements submission */
   const onSendReqs = () => {
     if (!reqText.trim()) return;
     const parsed = parseRequirements(reqText);
     setReqs(parsed);
+
+    // Echo back parsed requirements
     push({
       role: "user",
       content: (
@@ -113,18 +135,22 @@ export default function AIConsole() {
         </div>
       ),
     });
+
+    // Prompt for CV upload
     push({
       role: "bot",
       content: (
         <div className="text-sm">
-          ✅ تم استلام المتطلبات. الآن ارفع ملف الـ CV ثم اضغط {tt("chat.run")}.
+          ✅ Requirements received. Now upload the CV then click{" "}
+          {tt("chat.run")}.
         </div>
       ),
     });
+
     setReqText("");
   };
 
-  // رفع CV
+  /** Handle CV picking */
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     if (!f) return;
@@ -140,7 +166,7 @@ export default function AIConsole() {
     });
   };
 
-  // تشغيل التحليل الكامل
+  /** Full run: create job → upload CV → run analysis → fetch final result */
   const run = async () => {
     if (!cvFile || reqs.length === 0) {
       push({
@@ -155,8 +181,11 @@ export default function AIConsole() {
       });
       return;
     }
+
     setLoading(true);
     setResult(null);
+
+    // Visual "send" feedback
     push({
       role: "user",
       content: (
@@ -167,19 +196,20 @@ export default function AIConsole() {
     });
 
     try {
-      // 1) إنشاء الوظيفة
+      // 1) Create job
       const job = await jobsApi.create({
         title: title || (lang === "ar" ? "وظيفة بدون عنوان" : "Untitled Job"),
         description: description || "—",
         requirements: reqs,
       });
 
-      // 2) رفع الـ CV
+      // 2) Upload CV
       const uploaded = await cvApi.upload(cvFile);
 
-      // 3) تشغيل التحليل
+      // 3) Start analysis
       const a = await analysesApi.run({ jobId: job.id, cvId: uploaded.cvId });
 
+      // Show running indicator
       push({
         role: "sys",
         content: (
@@ -189,10 +219,11 @@ export default function AIConsole() {
         ),
       });
 
-      // 4) جلب النتيجة النهائية
+      // 4) Fetch final result
       const final = await analysesApi.get(a.id);
       setResult(final);
 
+      // Present summary + details
       push({
         role: "bot",
         content: (
@@ -202,7 +233,8 @@ export default function AIConsole() {
             </div>
             <div className="mt-2 text-sm">
               <b>{tt("chat.score")}</b>:{" "}
-              {typeof final.score === "number" ? final.score.toFixed(2) : "-"} / 10
+              {typeof final.score === "number" ? final.score.toFixed(2) : "-"} /
+              10
             </div>
 
             {Array.isArray(final.breakdown) && (
@@ -256,6 +288,7 @@ export default function AIConsole() {
         ),
       });
     } catch (e: any) {
+      // Friendly error bubble
       push({
         role: "bot",
         content: (
@@ -271,19 +304,19 @@ export default function AIConsole() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      {/* لوحة AI في الوسط */}
+      {/* Main AI panel */}
       <div className="relative rounded-[28px] border border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 p-4 shadow-xl overflow-hidden">
-        {/* خلفيات لطيفة */}
+        {/* Soft background blobs */}
         <div className="pointer-events-none absolute -z-10 -top-24 -start-24 size-72 rounded-full bg-blue-200/40 blur-3xl" />
         <div className="pointer-events-none absolute -z-10 -bottom-24 -end-24 size-72 rounded-full bg-purple-200/40 blur-3xl" />
 
-        {/* شريط عنوان */}
+        {/* Header bar */}
         <div className="flex items-center justify-between px-2 pb-3">
           <div className="font-semibold">AI • {t(lang, "app")}</div>
           <div className="text-xs opacity-60">Chat Console</div>
         </div>
 
-        {/* الرسائل */}
+        {/* Messages */}
         <div className="space-y-2 max-h-[55vh] overflow-y-auto pe-1">
           <AnimatePresence initial={false}>
             {messages.map((m) => (
@@ -308,15 +341,16 @@ export default function AIConsole() {
           {result && (
             <div className="me-auto max-w-[85%] rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 px-3 py-2">
               <div className="text-sm">
-                <b>{tt("chat.score")}:</b> {result.score?.toFixed?.(2) ?? "-"} / 10
+                <b>{tt("chat.score")}:</b> {result.score?.toFixed?.(2) ?? "-"} /
+                10
               </div>
             </div>
           )}
         </div>
 
-        {/* التحكم */}
+        {/* Controls */}
         <div className="mt-3 grid gap-2">
-          {/* عنوان ووصف (اختياري) */}
+          {/* Optional title/description */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
               placeholder={
@@ -338,7 +372,7 @@ export default function AIConsole() {
             />
           </div>
 
-          {/* متطلبات الوظيفة */}
+          {/* Requirements box */}
           <div className="rounded-2xl border p-2 bg-white/60 dark:bg-white/10">
             <div className="text-xs opacity-70 mb-1">
               {lang === "ar"
@@ -373,7 +407,11 @@ export default function AIConsole() {
                   className="hidden"
                 />
                 <span className="opacity-80">
-                  {cvFile ? cvFile.name : lang === "ar" ? "أرفق CV (PDF/DOCX)" : "Attach CV (PDF/DOCX)"}
+                  {cvFile
+                    ? cvFile.name
+                    : lang === "ar"
+                      ? "أرفق CV (PDF/DOCX)"
+                      : "Attach CV (PDF/DOCX)"}
                 </span>
               </label>
 
@@ -394,7 +432,11 @@ export default function AIConsole() {
                   ) : (
                     <Send className="size-4" />
                   )}
-                  {loading ? (lang === "ar" ? "جاري العمل…" : "Working…") : tt("chat.run")}
+                  {loading
+                    ? lang === "ar"
+                      ? "جاري العمل…"
+                      : "Working…"
+                    : tt("chat.run")}
                 </button>
               </div>
             </div>
@@ -402,7 +444,7 @@ export default function AIConsole() {
         </div>
       </div>
 
-      {/* Footer بسيط */}
+      {/* Simple footer */}
       <div className="text-xs opacity-60 text-center mt-4">
         Next.js • Tailwind • Motion
       </div>

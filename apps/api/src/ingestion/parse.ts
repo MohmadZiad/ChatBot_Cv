@@ -1,5 +1,4 @@
 // apps/api/src/ingestion/parse.ts
-import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
 /** نحاول تحميل pdfjs-dist من عدة مسارات (تتغير حسب النسخة) */
@@ -56,15 +55,42 @@ async function parseWithPdfJs(buf: Buffer): Promise<string> {
   }
 }
 
+/* ---------------------------------------------
+   pdf-parse: استيراد ديناميكي + كاش داخلي
+   هذا يمنع أي كود top-level بالحزمة من التنفيذ عند إقلاع السيرفر،
+   ويتأكد أننا نمرّر Buffer فقط.
+---------------------------------------------- */
+let _pdfParse: any | null = null;
+async function getPdfParse() {
+  if (_pdfParse) return _pdfParse;
+  const mod = await import("pdf-parse");
+  _pdfParse = (mod as any).default ?? (mod as any);
+  return _pdfParse;
+}
+
 /** قراءة PDF: نحاول أولًا بـ pdf-parse، وإلا نفاضل لـ pdfjs-dist */
-export async function parsePDF(buf: Buffer): Promise<string> {
+export async function parsePDF(input: unknown): Promise<string> {
+  // حماية: لا نسمح بتمرير path كنص
+  if (typeof input === "string") {
+    throw new Error("parsePDF: pass a Buffer, not a file path.");
+  }
+
+  // طبيعـة الإدخال: Buffer / ArrayBufferLike
+  const buf: Buffer = Buffer.isBuffer(input)
+    ? (input as Buffer)
+    : Buffer.from(input as ArrayBufferLike);
+
+  // المحاولة الأولى: pdf-parse
   try {
+    const pdfParse = await getPdfParse();
     const res = await pdfParse(buf);
-    const t = (res.text || "").trim();
+    const t = (res?.text || "").trim();
     if (t.length > 0) return t;
   } catch {
     // تجاهل — سنجرّب fallback
   }
+
+  // Fallback: pdfjs-dist
   return await parseWithPdfJs(buf);
 }
 

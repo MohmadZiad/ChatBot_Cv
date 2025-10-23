@@ -1,4 +1,6 @@
+// apps/web/src/components/Chatbot.tsx
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, X, Play, Loader2, Wand2 } from "lucide-react";
@@ -10,32 +12,58 @@ import { analysesApi, type Analysis } from "@/services/api/analyses";
 
 type Msg = { role: "bot" | "user" | "sys"; text: string };
 
+/** Safe helper to read language from localStorage (client-only). */
+function getLangFromStorage(): Lang {
+  try {
+    if (typeof window !== "undefined") {
+      return (window.localStorage.getItem("lang") as Lang) || "ar";
+    }
+  } catch {
+    // ignore read errors
+  }
+  return "ar";
+}
+
 export default function Chatbot() {
+  // Modal state
   const [open, setOpen] = useState(false);
-  const [lang, setLang] = useState<Lang>(
-    (localStorage.getItem("lang") as Lang) || "ar"
-  );
+
+  /**
+   * IMPORTANT: Do NOT read localStorage during the initial render.
+   * Use a stable default ("ar") and hydrate from localStorage in useEffect.
+   * This avoids "localStorage is not defined" on the first render.
+   */
+  const [lang, setLang] = useState<Lang>("ar");
+
+  // Translation shortcut that re-computes when `lang` changes
   const tt = useMemo(() => (p: string) => t(lang, p), [lang]);
 
+  // Hydrate language after mount and listen for cross-tab changes
   useEffect(() => {
-    const onStorage = () =>
-      setLang((localStorage.getItem("lang") as Lang) || "ar");
+    setLang(getLangFromStorage());
+    const onStorage = () => setLang(getLangFromStorage());
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Chat log
   const [msgs, setMsgs] = useState<Msg[]>([
     { role: "bot", text: tt("chat.hello") },
   ]);
+
+  // Data for selects
   const [cvs, setCvs] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [cvId, setCvId] = useState("");
   const [jobId, setJobId] = useState("");
+
+  // Optional JD text → AI suggestion
   const [jd, setJd] = useState("");
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [result, setResult] = useState<Analysis | null>(null);
 
+  // When the chat opens, fetch CVs and Jobs
   useEffect(() => {
     if (!open) return;
     cvApi
@@ -48,6 +76,7 @@ export default function Chatbot() {
       .catch(() => {});
   }, [open]);
 
+  // Ask AI to suggest requirements from a JD blob
   const handleSuggest = async () => {
     if (!jd.trim()) return;
     try {
@@ -74,13 +103,14 @@ export default function Chatbot() {
     }
   };
 
+  // Run analysis for selected CV + Job
   const run = async () => {
     if (!cvId || !jobId) return;
     setLoading(true);
     setResult(null);
     setMsgs((m) => [...m, { role: "user", text: `${tt("chat.run")} ▶️` }]);
     try {
-      const a = await analysesApi.run({ jobId, cvId }); // يرجع DONE
+      const a = await analysesApi.run({ jobId, cvId }); // returns final
       const score = Number(a.score ?? 0);
       setResult(a);
       setMsgs((m) => [
@@ -99,11 +129,11 @@ export default function Chatbot() {
 
   return (
     <>
-      {/* خلفيات راقية */}
+      {/* Soft background gradients */}
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-indigo-50 via-white to-pink-50 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900" />
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(600px_250px_at_10%_10%,rgba(99,102,241,.15),transparent_60%),radial-gradient(600px_250px_at_90%_30%,rgba(236,72,153,.15),transparent_60%)]" />
 
-      {/* زر عائم */}
+      {/* Floating open button */}
       <button
         onClick={() => setOpen(true)}
         className="fixed bottom-5 end-5 z-[60] size-12 rounded-2xl bg-gradient-to-br from-black to-stone-800 text-white grid place-items-center shadow-xl hover:scale-105 transition"
@@ -112,7 +142,7 @@ export default function Chatbot() {
         <MessageCircle />
       </button>
 
-      {/* نافذة الشات */}
+      {/* Chat modal */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -128,6 +158,7 @@ export default function Chatbot() {
               transition={{ type: "spring", stiffness: 130, damping: 16 }}
               className="absolute bottom-0 end-0 m-5 w-[min(460px,calc(100vw-2.5rem))] rounded-3xl border border-white/20 bg-white/80 dark:bg-black/70 shadow-2xl overflow-hidden"
             >
+              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 dark:border-white/10">
                 <div className="text-sm font-semibold">{tt("chat.title")}</div>
                 <button
@@ -138,6 +169,7 @@ export default function Chatbot() {
                 </button>
               </div>
 
+              {/* Body */}
               <div className="max-h-[70vh] overflow-auto p-3 space-y-3">
                 {msgs.map((m, i) => (
                   <div
@@ -154,7 +186,7 @@ export default function Chatbot() {
                   </div>
                 ))}
 
-                {/* JD box + AI suggest */}
+                {/* JD + AI suggestion panel */}
                 <div className="rounded-2xl border p-3 bg-white/70 dark:bg-white/5 backdrop-blur">
                   <div className="text-sm font-semibold mb-2">
                     Job Description (اختياري)
@@ -185,7 +217,7 @@ export default function Chatbot() {
                   </div>
                 </div>
 
-                {/* اختيارات */}
+                {/* Selects */}
                 <div className="rounded-2xl border p-3 bg-white/70 dark:bg-white/5 backdrop-blur space-y-2">
                   <div className="text-xs opacity-70">{tt("chat.pickCv")}</div>
                   <select
@@ -231,7 +263,7 @@ export default function Chatbot() {
                   </button>
                 </div>
 
-                {/* النتيجة */}
+                {/* Result */}
                 {result && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
