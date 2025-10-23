@@ -1,7 +1,17 @@
 // apps/api/src/ingestion/parse.ts
+// NOTE (for future maintainers):
+// - This file aggregates multiple extractors for PDFs (embedded text, PDF.js, OCR).
+// - Optionally, when USE_DOC_AI=1 and credentials are set, we try Google Document AI first.
+// - We always pick the "longest" result to be robust across different PDF encodings.
+// - Turn on verbose logging with EXTRACT_DEBUG=1.
+
 import path from "node:path";
 import fs from "node:fs/promises";
 import mammoth from "mammoth";
+
+// Optional: Google Document AI wrapper (safe / non-breaking):
+// Exported from apps/api/src/services/docai.ts as: export async function docaiExtractPdfText(buf: Buffer): Promise<string>
+import { docaiExtractPdfText } from "../services/docai";
 
 /* =========================
    Lazy imports (runtime only)
@@ -42,7 +52,8 @@ async function getTesseract() {
 let _canvas: any | null = null;
 async function getCanvas() {
   if (_canvas) return _canvas;
-  const mod = await import("canvas"); // canvas@3 works on Windows without system deps
+  // canvas@3 works on Windows without system deps
+  const mod = await import("canvas");
   _canvas = mod;
   return _canvas;
 }
@@ -50,7 +61,8 @@ async function getCanvas() {
 let _wordExtractor: any | null = null;
 async function getWordExtractor() {
   if (_wordExtractor) return _wordExtractor;
-  const mod = await import("word-extractor"); // DOC (قديم)
+  // Legacy .doc support
+  const mod = await import("word-extractor");
   _wordExtractor = (mod as any).default ?? (mod as any);
   return _wordExtractor;
 }
@@ -61,6 +73,7 @@ async function getWordExtractor() {
 
 function toBuf(input: unknown): Buffer {
   if (typeof input === "string") {
+    // We always expect a Buffer (not a path). Callers handle file I/O.
     throw new Error("Pass a Buffer, not a file path.");
   }
   return Buffer.isBuffer(input)
@@ -85,7 +98,7 @@ function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
    PDF extractors
 ========================= */
 
-/** 1) pdf-parse (نص مضمّن سريع) */
+/** 1) pdf-parse (fast embedded text) */
 async function extractTextWithPdfParse(
   buf: Buffer,
   log?: (m: any) => void
@@ -102,7 +115,7 @@ async function extractTextWithPdfParse(
   }
 }
 
-/** 2) pdfjs-dist (نص مضمّن + الروابط من Annotations) */
+/** 2) pdfjs-dist (embedded text + URI annotations) */
 async function extractTextWithPdfJs(
   buf: Buffer,
   log?: (m: any) => void
@@ -133,11 +146,11 @@ async function extractTextWithPdfJs(
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
 
-      // نص الصفحة
+      // Page text
       const content = await page.getTextContent({ normalizeWhitespace: true });
       text += content.items.map((it: any) => it?.str ?? "").join(" ") + "\n";
 
-      // روابط الصفحة (URI annotations)
+      // URI annotations (preserves links, useful sometimes)
       try {
         const ann = await page.getAnnotations();
         for (const a of ann) {
@@ -158,7 +171,7 @@ async function extractTextWithPdfJs(
     const t = out.trim();
     log?.({
       step: "pdfjs",
-      pages: doc.numPages,
+      pages: (doc as any)?.numPages,
       length: t.length,
       links: linkLines.length,
     });
@@ -180,14 +193,13 @@ async function renderPageToPngBuffer(
   const canvas = createCanvas(viewport.width, viewport.height);
   const ctx = canvas.getContext("2d");
 
-  // رسم الصفحة
+  // Render page
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  // (اختياري) تحسين بسيط للصورة قبل OCR: تحويل لتدرّج رمادي + عتبة
+  // (Optional) pre-OCR enhancement: grayscale + simple threshold
   try {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = img.data;
-    // threshold بسيط (تلقائي نسبيًا)
     let sum = 0;
     for (let i = 0; i < data.length; i += 4)
       sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
@@ -203,7 +215,7 @@ async function renderPageToPngBuffer(
 
   const png = canvas.toBuffer("image/png");
 
-  // احفظ أول صفحة للمعاينة لو وضع الديباغ مفعّل
+  // Save first page preview if debugging is enabled
   if (debugFirst) {
     try {
       const dir = path.join(process.cwd(), "storage", "ocr-debug");
@@ -215,7 +227,7 @@ async function renderPageToPngBuffer(
   return png;
 }
 
-/** 3) OCR لصفحات PDF — Tesseract Worker + معلمات محسّنة + Debug */
+/** 3) OCR for PDF pages — Tesseract.js worker (fallback) */
 async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const pdfjsLib = await loadPdfJs();
   if (!pdfjsLib) {
@@ -247,10 +259,10 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     await worker.loadLanguage(OCR_LANGS);
     await worker.initialize(OCR_LANGS);
 
-    // إعدادات قوية للـ OCR
+    // OCR tuning
     await worker.setParameters({
-      tessedit_pageseg_mode: "6", // فقرة نص واحد
-      tessedit_ocr_engine_mode: "1", // LSTM-only
+      tessedit_pageseg_mode: "6", // Assume a single uniform block of text
+      tessedit_ocr_engine_mode: "1", // LSTM only
       preserve_interword_spaces: "1",
       user_defined_dpi: "300",
     });
@@ -358,28 +370,58 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
    Public APIs
 ========================= */
 
-/** قراءة PDF — نجرب 3 طرق (parse → pdfjs+links → OCR) ونختار الأطول */
+/**
+ * parsePDF:
+ * When USE_DOC_AI=1, try Google Document AI first (non-blocking if fails),
+ * then fall back to legacy pipeline (pdf-parse → pdfjs → Tesseract OCR).
+ * We keep the longest result.
+ */
 export async function parsePDF(input: unknown): Promise<string> {
   const buf = toBuf(input);
-  const log = (m: any) => console.log("[PDF-EXTRACT]", m);
+  const debug = (process.env.EXTRACT_DEBUG || "0") !== "0";
+  const log = (...args: any[]) =>
+    debug && console.log("[PDF-EXTRACT]", ...args);
+
+  const MIN = Number(env("MIN_EXTRACTED_TEXT", "60"));
+  const useDocAi = (env("USE_DOC_AI", "0") || "0") !== "0";
 
   let best = "";
 
-  const t1 = await extractTextWithPdfParse(buf, log);
+  // 0) Document AI (optional)
+  if (useDocAi) {
+    try {
+      const d = await docaiExtractPdfText(buf);
+      log({ step: "docai", length: d.length });
+      if (d.length >= MIN && d.length > best.length) best = d;
+    } catch (e: any) {
+      log({ step: "docai", error: String(e?.message ?? e) });
+    }
+  }
+
+  // 1) pdf-parse
+  const t1 = await extractTextWithPdfParse(buf, (m) => log(m));
+  log({ step: "pdf-parse", length: t1.length });
   if (t1.length > best.length) best = t1;
 
-  const t2 = await extractTextWithPdfJs(buf, log);
+  // 2) pdfjs
+  const t2 = await extractTextWithPdfJs(buf, (m) => log(m));
+  log({ step: "pdfjs", length: t2.length });
   if (t2.length > best.length) best = t2;
 
-  const t3 = await ocrPdf(buf, log);
+  // 3) OCR (Tesseract fallback)
+  const t3 = await ocrPdf(buf, (m) => log(m));
+  log({ step: "tesseract", length: t3.length });
   if (t3.length > best.length) best = t3;
 
+  log({ step: "final", length: best.length });
   return best.trim();
 }
 
 /**
- * parseAny: واجهة موحّدة — تحدد المستخرج حسب الـ mime/الامتداد
- * ونفاضل دائمًا على "الأطول".
+ * parseAny:
+ * Unified entrypoint. For PDFs we keep the legacy pipeline here, because
+ * parsePDF() already tries DocAI first when enabled. For other types
+ * we reuse the original logic. We still pick the longest result.
  */
 export async function parseAny(
   input: unknown,
@@ -393,6 +435,7 @@ export async function parseAny(
   let runs: Array<() => Promise<string>> = [];
 
   if ((mime || "").includes("pdf") || is(".pdf")) {
+    // Use the same order as parsePDF (without DocAI here); callers can call parsePDF directly if needed.
     runs = [
       () => extractTextWithPdfParse(buf),
       () => extractTextWithPdfJs(buf),
@@ -426,7 +469,7 @@ export async function parseAny(
   ) {
     runs = [() => parsePlainText(buf)];
   } else {
-    // غير معروف: جرّب نص مباشر ثم OCR كـ fallback
+    // Unknown type: try raw text then OCR as a last resort
     runs = [() => parsePlainText(buf), () => parseImageWithOCR(buf)];
   }
 
