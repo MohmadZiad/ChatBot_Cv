@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# احفظه في جذور المشروع
+# ملف/مجلدات المفاتيح
+apps/api/keys/
+*.key
+*.pem
+*.p12
+
+# ملفات البيئة
+.env
+.env.*
+!.env.example
