@@ -16,31 +16,15 @@ type Msg = {
   content: React.ReactNode;
 };
 
-// --- FIX: لا نقرأ localStorage في الريندر/initial state ---
 function useLang(): Lang {
-  const [lang, setLang] = React.useState<Lang>("ar");
-
+  const [lang, setLang] = React.useState<Lang>(
+    (localStorage.getItem("lang") as Lang) || "ar"
+  );
   React.useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // قراءة أولية آمنة
-    try {
-      const v = (window.localStorage.getItem("lang") as Lang) || "ar";
-      setLang(v);
-    } catch {
-      // تجاهل أي خطأ وصول للـ localStorage
-    }
-
-    // التحديث عند تغيّر القيمة من تبويب آخر
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "lang" && e.newValue) {
-        setLang(e.newValue as Lang);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    const h = () => setLang((localStorage.getItem("lang") as Lang) || "ar");
+    window.addEventListener("storage", h);
+    return () => window.removeEventListener("storage", h);
   }, []);
-
   return lang;
 }
 
@@ -60,9 +44,7 @@ function parseRequirements(text: string): JobRequirement[] {
         .map((p) => p.trim())
         .filter(Boolean);
       const requirement = parts[0] || line;
-      const mustHave =
-        parts.some((p) => /^must/i.test(p)) ||
-        parts.some((p) => /^ضروري/.test(p));
+      const mustHave = parts.some((p) => /^must/i.test(p) || /^ضروري/.test(p));
       const weightPart = parts.find((p) => /^\d+(\.\d+)?$/.test(p));
       const weight = weightPart ? Number(weightPart) : 1;
       return { requirement, mustHave, weight };
@@ -83,8 +65,8 @@ export default function AIConsole() {
           <div className="text-sm opacity-80 mt-1">{tt("chat.hello")}</div>
           <ul className="text-xs opacity-70 mt-2 list-disc ps-5">
             <li>
-              1) اكتب متطلبات الوظيفة (سطر لكل Requirement، ضيف <b>must</b> و/أو
-              وزن مثل: <code>2</code>).
+              1) اكتب متطلبات الوظيفة (سطر لكل Requirement، ضيف{" "}
+              <b>must</b> و/أو وزن مثل: <code>2</code>).
             </li>
             <li>2) ارفع ملف الـ CV (PDF/DOCX).</li>
             <li>3) اضغط {tt("chat.run")} — سأعرض لك النتيجة.</li>
@@ -220,8 +202,7 @@ export default function AIConsole() {
             </div>
             <div className="mt-2 text-sm">
               <b>{tt("chat.score")}</b>:{" "}
-              {typeof final.score === "number" ? final.score.toFixed(2) : "-"} /
-              10
+              {typeof final.score === "number" ? final.score.toFixed(2) : "-"} / 10
             </div>
 
             {Array.isArray(final.breakdown) && (
@@ -327,8 +308,7 @@ export default function AIConsole() {
           {result && (
             <div className="me-auto max-w-[85%] rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 px-3 py-2">
               <div className="text-sm">
-                <b>{tt("chat.score")}:</b> {result.score?.toFixed?.(2) ?? "-"} /
-                10
+                <b>{tt("chat.score")}:</b> {result.score?.toFixed?.(2) ?? "-"} / 10
               </div>
             </div>
           )}
@@ -393,11 +373,7 @@ export default function AIConsole() {
                   className="hidden"
                 />
                 <span className="opacity-80">
-                  {cvFile
-                    ? cvFile.name
-                    : lang === "ar"
-                      ? "أرفق CV (PDF/DOCX)"
-                      : "Attach CV (PDF/DOCX)"}
+                  {cvFile ? cvFile.name : lang === "ar" ? "أرفق CV (PDF/DOCX)" : "Attach CV (PDF/DOCX)"}
                 </span>
               </label>
 
@@ -418,11 +394,7 @@ export default function AIConsole() {
                   ) : (
                     <Send className="size-4" />
                   )}
-                  {loading
-                    ? lang === "ar"
-                      ? "جاري العمل…"
-                      : "Working…"
-                    : tt("chat.run")}
+                  {loading ? (lang === "ar" ? "جاري العمل…" : "Working…") : tt("chat.run")}
                 </button>
               </div>
             </div>

@@ -1,4 +1,3 @@
-// apps/web/src/components/Chatbot.tsx
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -11,33 +10,16 @@ import { analysesApi, type Analysis } from "@/services/api/analyses";
 
 type Msg = { role: "bot" | "user" | "sys"; text: string };
 
-// --- helpers to safely access localStorage on client only ---
-function getLangFromStorage(): Lang {
-  if (typeof window === "undefined") return "ar";
-  try {
-    return ((window.localStorage.getItem("lang") as Lang) || "ar") as Lang;
-  } catch {
-    return "ar";
-  }
-}
-
 export default function Chatbot() {
   const [open, setOpen] = useState(false);
-
-  // FIX: don't read localStorage in render/initializer
-  const [lang, setLang] = useState<Lang>("ar");
+  const [lang, setLang] = useState<Lang>(
+    (localStorage.getItem("lang") as Lang) || "ar"
+  );
   const tt = useMemo(() => (p: string) => t(lang, p), [lang]);
 
   useEffect(() => {
-    // initial read on mount (client)
-    setLang(getLangFromStorage());
-
-    // update when changed in another tab
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "lang") {
-        setLang((e.newValue as Lang) || "ar");
-      }
-    };
+    const onStorage = () =>
+      setLang((localStorage.getItem("lang") as Lang) || "ar");
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
@@ -98,7 +80,7 @@ export default function Chatbot() {
     setResult(null);
     setMsgs((m) => [...m, { role: "user", text: `${tt("chat.run")} ▶️` }]);
     try {
-      const a = await analysesApi.run({ jobId, cvId }); // returns DONE
+      const a = await analysesApi.run({ jobId, cvId }); // يرجع DONE
       const score = Number(a.score ?? 0);
       setResult(a);
       setMsgs((m) => [
