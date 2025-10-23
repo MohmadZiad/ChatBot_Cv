@@ -4,8 +4,14 @@ import { Prisma } from "@prisma/client";
 import { embedTexts } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvEmbeddings } from "./embeddings.js";
+import { debugLog } from "../utils/debug.js";
 
 type HttpError = Error & { status?: number; code?: string };
+
+const EMBEDDING_MODEL =
+  process.env.EMBEDDINGS_MODEL ||
+  process.env.EMBEDDING_MODEL ||
+  "text-embedding-3-small";
 
 function httpError(
   message: string,
@@ -19,6 +25,7 @@ function httpError(
 }
 
 export async function runAnalysis(jobId: string, cvId: string) {
+  debugLog("analysis.run", "starting analysis", { jobId, cvId });
   // يضمن وجود embeddings أو يرمي 422 NO_CV_TEXT
   await ensureCvEmbeddings(cvId);
 
@@ -34,6 +41,12 @@ export async function runAnalysis(jobId: string, cvId: string) {
     throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
   }
 
+  debugLog("analysis.run", "loaded cv chunks", {
+    jobId,
+    cvId,
+    chunkCount: chunks.length,
+  });
+
   const reqs = await prisma.jobRequirement.findMany({
     where: { jobId },
     orderBy: { id: "asc" },
@@ -41,9 +54,21 @@ export async function runAnalysis(jobId: string, cvId: string) {
   if (!reqs.length)
     throw httpError("الوظيفة بلا متطلبات.", 422, "NO_JOB_REQUIREMENTS");
 
+  debugLog("analysis.run", "loaded job requirements", {
+    jobId,
+    cvId,
+    requirementCount: reqs.length,
+  });
+
   let reqVecs: number[][];
   try {
-    reqVecs = await embedTexts(reqs.map((r) => r.requirement));
+    debugLog("analysis.run", "requesting embeddings", {
+      jobId,
+      cvId,
+      model: EMBEDDING_MODEL,
+      requirementCount: reqs.length,
+    });
+    reqVecs = await embedTexts(reqs.map((r) => r.requirement), EMBEDDING_MODEL);
   } catch (e: any) {
     const err: HttpError = new Error(
       `OpenAI embeddings failed: ${e?.message || e}`
@@ -52,6 +77,12 @@ export async function runAnalysis(jobId: string, cvId: string) {
     err.code = "EMBEDDINGS_FAILED";
     throw err;
   }
+
+  debugLog("analysis.run", "computed embeddings", {
+    jobId,
+    cvId,
+    model: EMBEDDING_MODEL,
+  });
 
   const perReq: any[] = [];
   const evidence: any[] = [];
@@ -111,8 +142,15 @@ export async function runAnalysis(jobId: string, cvId: string) {
       breakdown: perReq as unknown as Prisma.InputJsonValue,
       evidence: evidence as Prisma.InputJsonValue,
       gaps: buildGaps(perReq) as Prisma.InputJsonValue,
-      model: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
+      model: EMBEDDING_MODEL,
     },
+  });
+
+  debugLog("analysis.run", "analysis completed", {
+    analysisId: saved.id,
+    jobId,
+    cvId,
+    score: saved.score ? Number(saved.score) : 0,
   });
 
   return {
