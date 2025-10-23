@@ -33,7 +33,9 @@ export type UploadCVError = {
 };
 
 export function buildPublicUrl(cv: CV): string | null {
-  const base = process.env.NEXT_PUBLIC_STORAGE_PUBLIC_BASE;
+  const base =
+    process.env.NEXT_PUBLIC_STORAGE_PUBLIC_BASE ||
+    process.env.NEXT_PUBLIC_STORAGE_PUBLIC_URL;
   if (!base) return null;
   return `${base}/${cv.storagePath}`;
 }
@@ -47,76 +49,62 @@ export const cvApi = {
       sizeInMB: (file.size / (1024 * 1024)).toFixed(2) + " MB",
     });
 
-    // التحقق من حجم الملف
+    // السماح بكل الأنواع — فقط نقيّد الحجم
     const maxSize = 20 * 1024 * 1024; // 20MB
     if (file.size > maxSize) {
-      throw new Error(`حجم الملف كبير جداً. الحد الأقصى هو 20 ميجابايت.`);
-    }
-
-    // التحقق من نوع الملف
-    const allowedTypes = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/msword",
-    ];
-
-    const allowedExtensions = [".pdf", ".docx", ".doc"];
-    const hasValidExtension = allowedExtensions.some((ext) =>
-      file.name.toLowerCase().endsWith(ext)
-    );
-
-    if (!allowedTypes.includes(file.type) && !hasValidExtension) {
-      throw new Error(`نوع الملف غير مدعوم. الرجاء رفع ملف PDF أو DOCX فقط.`);
+      throw new Error("حجم الملف كبير جداً. الحد الأقصى هو 20 ميجابايت.");
     }
 
     const form = new FormData();
     form.append("file", file, file.name);
 
-    console.log("📡 Sending request to:", `${API}/cv/upload`);
+    const url = `${API}/cv/upload`;
+    console.log("📡 Sending request to:", url);
 
     try {
-      const res = await fetch(`${API}/cv/upload`, {
-        method: "POST",
-        body: form,
-      });
-
+      const res = await fetch(url, { method: "POST", body: form });
       console.log("📨 Response status:", res.status, res.statusText);
 
-      // قراءة الـ response مرة واحدة فقط
-      const responseText = await res.text();
-      console.log("📨 Raw response:", responseText);
+      // نقرأ الاستجابة بذكاء: JSON أولاً، ثم fallback إلى نص
+      const ct = res.headers.get("content-type") || "";
+      let responseData: any = null;
+      let rawText = "";
 
-      let responseData: any;
-      try {
-        responseData = JSON.parse(responseText);
-      } catch (parseErr) {
-        console.error("❌ Failed to parse JSON:", responseText);
-        throw new Error(
-          `استجابة غير صالحة من السيرفر: ${responseText.substring(0, 100)}`
-        );
+      if (ct.includes("application/json")) {
+        responseData = await res.json().catch(() => null);
+      } else {
+        rawText = await res.text().catch(() => "");
+        try {
+          responseData = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          // ليس JSON صالح
+        }
       }
 
       if (!res.ok) {
-        console.error("❌ Upload error:", responseData);
-        const message =
-          responseData?.message || `خطأ في الرفع: HTTP ${res.status}`;
-        throw new Error(message);
+        const messageFromServer =
+          responseData?.message ||
+          rawText ||
+          `خطأ في الرفع: HTTP ${res.status}`;
+        console.error("❌ Upload error payload:", responseData ?? rawText);
+        throw new Error(messageFromServer);
+      }
+
+      if (!responseData || responseData.ok !== true) {
+        console.warn("⚠️ Unexpected success payload:", responseData);
       }
 
       console.log("✅ Upload successful:", responseData);
-      return responseData;
+      return responseData as UploadCVResponse;
     } catch (error: any) {
       console.error("❌ Upload failed:", error);
 
-      if (
-        error.message.includes("fetch") ||
-        error.message.includes("Failed to fetch")
-      ) {
+      const msg = (error?.message || "").toLowerCase();
+      if (msg.includes("failed to fetch")) {
         throw new Error(
-          "فشل الاتصال بالسيرفر. تأكد من تشغيل الـ API على المنفذ 4000."
+          "فشل الاتصال بالسيرفر. تأكد من تشغيل الـ API على http://localhost:4000 والتأكد من CORS."
         );
       }
-
       throw error;
     }
   },

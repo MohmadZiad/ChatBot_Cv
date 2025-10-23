@@ -1,24 +1,24 @@
-// apps/api/src/index.ts
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { registerRoutes } from "./routes/index.js";
 
-const app = Fastify({ 
-  logger: true
+const app = Fastify({
+  logger: true,
 });
 
 // CORS أثناء التطوير
 await app.register(cors, {
-  origin: process.env.WEB_ORIGIN || true,
+  // ندعم كلا الاسمين: WEB_ORIGIN و CORS_ORIGIN
+  origin: process.env.WEB_ORIGIN || process.env.CORS_ORIGIN || true,
   credentials: true,
 });
 
 // رفع ملفات حتى 20MB
 await app.register(multipart, {
-  limits: { 
+  limits: {
     fileSize: 20 * 1024 * 1024,
-    files: 1
+    files: 1,
   },
   attachFieldsToBody: false,
 });
