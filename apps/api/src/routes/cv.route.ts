@@ -112,8 +112,8 @@ export async function cvRoute(app: FastifyInstance) {
       });
     } catch (err: any) {
       app.log.error({ err }, "cv upload failed");
-      const status = err?.status ?? 500;
-      const code = err?.code ?? "UPLOAD_FAILED";
+      const status = err?.status ?? err?.statusCode ?? 500;
+      const code = err?.code ?? err?.error ?? "UPLOAD_FAILED";
       return reply
         .code(status)
         .send({ ok: false, code, message: err?.message || "upload failed" });
