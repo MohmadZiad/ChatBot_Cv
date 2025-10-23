@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { embedTexts } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvEmbeddings } from "./embeddings.js";
+import { debugLog } from "../utils/debug.js";
 
 type HttpError = Error & { status?: number; code?: string };
 
@@ -19,6 +20,7 @@ function httpError(
 }
 
 export async function runAnalysis(jobId: string, cvId: string) {
+  debugLog("analysis.run", "starting analysis", { jobId, cvId });
   // يضمن وجود embeddings أو يرمي 422 NO_CV_TEXT
   await ensureCvEmbeddings(cvId);
 
@@ -34,12 +36,24 @@ export async function runAnalysis(jobId: string, cvId: string) {
     throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
   }
 
+  debugLog("analysis.run", "loaded cv chunks", {
+    jobId,
+    cvId,
+    chunkCount: chunks.length,
+  });
+
   const reqs = await prisma.jobRequirement.findMany({
     where: { jobId },
     orderBy: { id: "asc" },
   });
   if (!reqs.length)
     throw httpError("الوظيفة بلا متطلبات.", 422, "NO_JOB_REQUIREMENTS");
+
+  debugLog("analysis.run", "loaded job requirements", {
+    jobId,
+    cvId,
+    requirementCount: reqs.length,
+  });
 
   let reqVecs: number[][];
   try {
@@ -113,6 +127,13 @@ export async function runAnalysis(jobId: string, cvId: string) {
       gaps: buildGaps(perReq) as Prisma.InputJsonValue,
       model: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
     },
+  });
+
+  debugLog("analysis.run", "analysis completed", {
+    analysisId: saved.id,
+    jobId,
+    cvId,
+    score: saved.score ? Number(saved.score) : 0,
   });
 
   return {

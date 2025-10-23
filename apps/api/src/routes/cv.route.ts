@@ -6,6 +6,8 @@ import { putToStorage } from "../ingestion/upload.js";
 import { parsePDF, parseDOCX } from "../ingestion/parse.js";
 import { chunkText } from "../ingestion/chunk.js";
 import { detectLang } from "../nlp/lang.js";
+import { isCvTextUsable } from "../ingestion/validation.js";
+import { debugLog } from "../utils/debug.js";
 
 type HttpError = Error & { status?: number; code?: string };
 const unprocessable = (message: string, code = "UNPROCESSABLE"): HttpError => {
@@ -35,6 +37,11 @@ export async function cvRoute(app: FastifyInstance) {
       const original = mp.filename ?? "cv.bin";
 
       // 1) خزّن الملف أولًا
+      debugLog("cv.upload", "storing file", {
+        mime,
+        bytes: fileBuf.length,
+        original,
+      });
       const { path, publicUrl } = await putToStorage(fileBuf, mime, original);
 
       // 2) جرّب استخراج النص
@@ -49,7 +56,7 @@ export async function cvRoute(app: FastifyInstance) {
       text = (text || "").trim();
 
       // guard: لو النص قليل جدًا اعتبره غير صالح
-      if (!text || text.length < 200) {
+      if (!isCvTextUsable(text)) {
         return reply.code(422).send({
           ok: false,
           code: "NO_EXTRACTABLE_TEXT",
@@ -81,6 +88,12 @@ export async function cvRoute(app: FastifyInstance) {
       }));
       const parts = chunksData.length;
       if (parts) await prisma.cVChunk.createMany({ data: chunksData });
+
+      debugLog("cv.upload", "stored CV chunks", {
+        cvId: cv.id,
+        parts,
+        lang,
+      });
 
       return reply.code(201).send({
         ok: true,
