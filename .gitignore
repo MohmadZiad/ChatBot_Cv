@@ -5,3 +5,7 @@ node_modules/
 apps/api/keys/
 keys/
 apps/api/keys/*.json
+apps/api/keys/
+.env
+*.key
+*.pem
