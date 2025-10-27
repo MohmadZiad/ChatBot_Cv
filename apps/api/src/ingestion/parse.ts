@@ -85,6 +85,35 @@ function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
     .join(sep);
 }
 
+async function loadTesseractLanguages(
+  worker: any,
+  langsArr: string[],
+  log?: (m: any) => void
+) {
+  try {
+    await worker.loadLanguage(langsArr as any);
+  } catch (err) {
+    const message = (err as any)?.message || String(err);
+    const shouldRetryAsString =
+      Array.isArray(langsArr) &&
+      langsArr.length > 0 &&
+      err instanceof TypeError &&
+      typeof message === "string" &&
+      message.includes("languageMap");
+
+    if (!shouldRetryAsString) throw err;
+
+    log?.({
+      step: "tesseract-loadLanguage",
+      retry: "join",
+      langs: langsArr,
+      error: message,
+    });
+
+    await worker.loadLanguage(langsArr.join("+"));
+  }
+}
+
 /* =========================
    PDF extractors
 ========================= */
@@ -222,7 +251,7 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     });
 
     // v6: array of langs
-    await worker.loadLanguage(langsArr as any);
+    await loadTesseractLanguages(worker, langsArr, log);
     await worker.initialize(langsArr.join("+"));
 
     await worker.setParameters({
@@ -314,7 +343,7 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
       langPath: TESSDATA,
       cacheMethod: "readOnly",
     });
-    await worker.loadLanguage(langsArr as any);
+    await loadTesseractLanguages(worker, langsArr);
     await worker.initialize(langsArr.join("+"));
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
