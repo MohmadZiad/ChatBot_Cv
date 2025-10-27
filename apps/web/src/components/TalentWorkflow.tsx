@@ -473,7 +473,7 @@ const COPY = {
   },
 } as const;
 
-type CopyKey = (typeof COPY)["ar"];
+type CopyKey = (typeof COPY)[keyof typeof COPY];
 
 const TEMPLATES_KEY = "job-templates-v2";
 const MAX_FILES = 50;

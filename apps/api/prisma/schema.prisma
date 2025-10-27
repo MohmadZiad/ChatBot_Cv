@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")  // نستعمل الـ Pooler هنا
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")          // عبر الـ Pooler لتشغيل السيرفر
+directUrl = env("DIRECT_URL")
 }
 
 
