@@ -85,21 +85,22 @@ function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
     .join(sep);
 }
 
+/** تحميل لغات Tesseract مع fallback مرن (v6) */
 async function loadTesseractLanguages(
   worker: any,
   langsArr: string[],
   log?: (m: any) => void
 ) {
   try {
-    await worker.loadLanguage(langsArr as any);
+    // بعض بنايات v6 تفضّل varargs:
+    await worker.loadLanguage(...langsArr);
   } catch (err) {
     const message = (err as any)?.message || String(err);
     const shouldRetryAsString =
-      Array.isArray(langsArr) &&
-      langsArr.length > 0 &&
-      err instanceof TypeError &&
-      typeof message === "string" &&
-      message.includes("languageMap");
+      err instanceof TypeError ||
+      /map is not a function/i.test(message) ||
+      /languageMap/i.test(message) ||
+      /langs?Arr/i.test(message);
 
     if (!shouldRetryAsString) throw err;
 
@@ -110,6 +111,7 @@ async function loadTesseractLanguages(
       error: message,
     });
 
+    // fallback: سلسلة موحّدة "eng+ara"
     await worker.loadLanguage(langsArr.join("+"));
   }
 }
@@ -122,6 +124,10 @@ async function extractTextWithPdfParse(
   log?: (m: any) => void
 ): Promise<string> {
   try {
+    // حارس لمنع ENOENT داخل pdf-parse
+    if (!buf || buf.length === 0) {
+      throw new Error("Empty buffer received by pdf-parse");
+    }
     const pdfParse = await getPdfParse();
     const res = await pdfParse(buf);
     const t = (res?.text || "").trim();
@@ -219,7 +225,7 @@ async function renderPageToPngBuffer(
   return png;
 }
 
-/** OCR fallback (Tesseract.js v6 expects array of langs) */
+/** OCR fallback (Tesseract.js v6) */
 async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const pdfjsLib = await loadPdfJs();
   if (!pdfjsLib) {
@@ -227,7 +233,7 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     return "";
   }
 
-  // sanitize langs for v6 (array), allow env of "eng+ara" or "eng,ara"
+  // sanitize langs: "eng+ara" أو "eng,ara" → Array
   const langsArr = (env("OCR_LANGS", "eng+ara") || "eng")
     .replace(/,/g, "+")
     .split("+")
@@ -240,17 +246,20 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
     "TESSDATA_PATH",
     path.join(process.cwd(), "apps/api/assets/tessdata")
   )!;
-  const DEBUG = env("OCR_DEBUG", "0") !== "0";
+  const DEBUG = env("OCR_DEBUG", env("EXTRACT_DEBUG", "0")) !== "0";
 
   try {
     const { createWorker } = await getTesseract();
-    const worker = await createWorker({
+    log?.({ step: "ocr", msg: "creating worker..." });
+
+    // ✅ v6: مرّر لائحة اللغات (أو []) أولاً، ثم الخيارات كوسيط ثانٍ
+    const worker = await createWorker([], {
       langPath: TESSDATA,
       cacheMethod: "readOnly",
       // logger: DEBUG ? (m: any) => log?.({ step: "tesseract", m }) : undefined,
     });
+    log?.({ step: "ocr", msg: "worker created" });
 
-    // v6: array of langs
     await loadTesseractLanguages(worker, langsArr, log);
     await worker.initialize(langsArr.join("+"));
 
@@ -339,7 +348,8 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
       path.join(process.cwd(), "apps/api/assets/tessdata")
     )!;
 
-    const worker = await createWorker({
+    // ✅ v6: مرّر [] أولاً ثم الخيارات
+    const worker = await createWorker([], {
       langPath: TESSDATA,
       cacheMethod: "readOnly",
     });
@@ -388,7 +398,7 @@ export async function parsePDF(input: unknown): Promise<string> {
     extractTextWithPdfParse,
     extractTextWithPdfJs,
     ocrPdf,
-  ]) {
+  ] as const) {
     try {
       const t = await extractor(buf, (m: any) => log(m));
       if (t.length > best.length) best = t;

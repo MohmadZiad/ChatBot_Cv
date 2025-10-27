@@ -15,7 +15,6 @@ export type CV = {
   updatedAt?: string;
 };
 
-
 export type UploadCVResponse = {
   ok: boolean;
   cvId: string;
