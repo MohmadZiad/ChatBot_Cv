@@ -86,7 +86,13 @@ type CandidateResult = {
   analysis: Analysis & { message?: string };
 };
 
-type SortKey = "finalScore" | "mustPercent" | "nicePercent" | "experience" | "name" | "status";
+type SortKey =
+  | "finalScore"
+  | "mustPercent"
+  | "nicePercent"
+  | "experience"
+  | "name"
+  | "status";
 
 type JobTemplate = {
   id: string;
@@ -169,9 +175,11 @@ const COPY = {
     },
     steps: {
       step1: "الخطوة 1: توصيف الوظيفة",
-      step1Hint: "حقول واضحة + شرائح لتحديد المهارات، الخبرة، المستوى، نوع التعاقد واللغة.",
+      step1Hint:
+        "حقول واضحة + شرائح لتحديد المهارات، الخبرة، المستوى، نوع التعاقد واللغة.",
       step2: "الخطوة 2: الرفع والفرز",
-      step2Hint: "اسحب ما يصل إلى 50 ملف CV، مع كشف تلقائي للتكرار وإمكانية إعادة المحاولة.",
+      step2Hint:
+        "اسحب ما يصل إلى 50 ملف CV، مع كشف تلقائي للتكرار وإمكانية إعادة المحاولة.",
       step3: "الخطوة 3: النتائج الذكية",
       step3Hint: "جدول قابل للفرز والتصفية مع شريط إجراءات ثابت أعلى النتائج.",
       step4: "الخطوة 4: صفحة المقارنة",
@@ -318,13 +326,16 @@ const COPY = {
     },
     steps: {
       step1: "Step 1: Job definition",
-      step1Hint: "Structured fields and chips for must-have skills, experience, level, contract and languages.",
+      step1Hint:
+        "Structured fields and chips for must-have skills, experience, level, contract and languages.",
       step2: "Step 2: Upload & triage",
-      step2Hint: "Drag & drop up to 50 CVs with duplicate detection and retry handling.",
+      step2Hint:
+        "Drag & drop up to 50 CVs with duplicate detection and retry handling.",
       step3: "Step 3: Smart results",
       step3Hint: "Sortable table with quick filters and action bar.",
       step4: "Step 4: Comparison view",
-      step4Hint: "Compare 2–4 candidates side by side with strengths and weaknesses.",
+      step4Hint:
+        "Compare 2–4 candidates side by side with strengths and weaknesses.",
       step5: "Step 5: Manager report",
       step5Hint: "Generate a one-page summary ready to share.",
     },
@@ -343,7 +354,8 @@ const COPY = {
       languages: "Language",
       templates: "Saved templates",
       loadTemplate: "Load",
-      noTemplates: "No templates yet — save the first definition to reuse it later.",
+      noTemplates:
+        "No templates yet — save the first definition to reuse it later.",
     },
     buttons: {
       saveTemplate: "Save template",
@@ -419,7 +431,8 @@ const COPY = {
         quality: "Resume is well structured and clear.",
       },
       weaknesses: {
-        experienceLow: "Experience ({value} yrs) is below the target ({target}).",
+        experienceLow:
+          "Experience ({value} yrs) is below the target ({target}).",
         experienceHigh: "Experience exceeds the target range.",
         qualityLow: "Resume formatting needs improvement.",
         missingMust: "Missing: {items}.",
@@ -460,7 +473,7 @@ const COPY = {
   },
 } as const;
 
-type CopyKey = typeof COPY["ar"];
+type CopyKey = (typeof COPY)["ar"];
 
 const TEMPLATES_KEY = "job-templates-v2";
 const MAX_FILES = 50;
@@ -471,13 +484,18 @@ function randomId() {
 
 function formatPercent(value: number): string {
   const rounded = Number(value.toFixed(1));
-  return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
+  return Number.isInteger(rounded)
+    ? String(Math.round(rounded))
+    : rounded.toFixed(1);
 }
 
 function formatBytes(size: number): string {
   if (!size) return "0";
   const units = ["B", "KB", "MB", "GB"];
-  const idx = Math.min(units.length - 1, Math.floor(Math.log(size) / Math.log(1024)));
+  const idx = Math.min(
+    units.length - 1,
+    Math.floor(Math.log(size) / Math.log(1024))
+  );
   const value = size / 1024 ** idx;
   return `${value.toFixed(idx === 0 ? 0 : value < 10 ? 1 : 0)} ${units[idx]}`;
 }
@@ -492,7 +510,10 @@ function formatList(items: string[], lang: Lang): string {
   return lang === "ar" ? items.join("، ") : items.join(", ");
 }
 
-function fmt(template: string, replacements: Record<string, string | number>): string {
+function fmt(
+  template: string,
+  replacements: Record<string, string | number>
+): string {
   let out = template;
   for (const [key, value] of Object.entries(replacements)) {
     out = out.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
@@ -552,7 +573,7 @@ function detectLanguages(text: string): string[] {
 function parseCandidateMeta(
   text: string | null | undefined,
   fallbackName: string,
-  cvLang?: string | null,
+  cvLang?: string | null
 ): CandidateMeta {
   const safeText = text ? text.replace(/\r/g, "") : "";
   const lines = safeText
@@ -567,13 +588,17 @@ function parseCandidateMeta(
 
   const locationMatch = safeText.match(/(?:Location|الموقع)[:\s]+([^\n]+)/i);
 
-  const experienceMatch = safeText.match(/(\d{1,2})\s*(?:years?|yrs?|سن(?:ة|وات)|عام|خبرة)/gi);
+  const experienceMatch = safeText.match(
+    /(\d{1,2})\s*(?:years?|yrs?|سن(?:ة|وات)|عام|خبرة)/gi
+  );
   const yearsExperience = experienceMatch
     ?.map((token) => Number(token.replace(/[^0-9]/g, "")))
     .filter((n) => !Number.isNaN(n))
     .reduce((acc, curr) => Math.max(acc, curr), 0);
 
-  const companyMatch = safeText.match(/(?:Company|Employer|شركة)[:\s]+([^\n]+)/i);
+  const companyMatch = safeText.match(
+    /(?:Company|Employer|شركة)[:\s]+([^\n]+)/i
+  );
   let lastCompany = companyMatch?.[1]?.trim();
   if (!lastCompany) {
     const atMatch = safeText.match(/\b(?:at|@)\s+([A-Z][\w& ]{2,40})/);
@@ -594,7 +619,8 @@ function parseCandidateMeta(
     if (mapped) detectedLanguages.unshift(mapped);
   }
 
-  const summaryLine = lines.find((line) => /summary|objective|ملخص/i.test(line)) || lines[1];
+  const summaryLine =
+    lines.find((line) => /summary|objective|ملخص/i.test(line)) || lines[1];
 
   const qualitySignals: string[] = [];
   if (/summary|objective|ملخص/i.test(safeText)) qualitySignals.push("sections");
@@ -608,7 +634,9 @@ function parseCandidateMeta(
     phone: phoneMatch?.[0],
     location: locationMatch?.[1]?.trim(),
     languages: Array.from(new Set(detectedLanguages)).slice(0, 5),
-    yearsExperience: yearsExperience ? Math.min(yearsExperience, 40) : undefined,
+    yearsExperience: yearsExperience
+      ? Math.min(yearsExperience, 40)
+      : undefined,
     lastCompany,
     projects: projectLinks,
     github,
@@ -619,7 +647,10 @@ function parseCandidateMeta(
   };
 }
 
-function computeQualityScore(meta: CandidateMeta): { score: number; signals: string[] } {
+function computeQualityScore(meta: CandidateMeta): {
+  score: number;
+  signals: string[];
+} {
   let score = 0;
   const signals: string[] = [];
   if (meta.textLength > 2000) {
@@ -660,11 +691,14 @@ function computeQualityScore(meta: CandidateMeta): { score: number; signals: str
 
 function computeExperienceScore(
   years: number | undefined,
-  bandId: string | null,
+  bandId: string | null
 ): { score: number; status: "within" | "below" | "above" | "unknown" } {
   if (!bandId) {
     if (years == null) return { score: 60, status: "unknown" };
-    return { score: Math.min(100, Math.round(Math.min(years * 15, 90))), status: "unknown" };
+    return {
+      score: Math.min(100, Math.round(Math.min(years * 15, 90))),
+      status: "unknown",
+    };
   }
   const band = experienceBands.find((b) => b.id === bandId);
   if (!band) return { score: 60, status: "unknown" };
@@ -690,31 +724,45 @@ function computeScores(
   analysis: Analysis,
   meta: CandidateMeta,
   jobConfig: { experienceBand: string | null },
-  duplicateOf?: string,
+  duplicateOf?: string
 ): CandidateScores {
   const breakdown = Array.isArray(analysis.breakdown) ? analysis.breakdown : [];
   const must = breakdown.filter((b) => b.mustHave);
   const nice = breakdown.filter((b) => !b.mustHave);
 
   const mustPercent = must.length
-    ? (must.reduce((sum, item) => sum + Number(item.score10 ?? item.similarity * 10), 0) /
+    ? (must.reduce(
+        (sum, item) => sum + Number(item.score10 ?? item.similarity * 10),
+        0
+      ) /
         (must.length * 10)) *
       100
     : 0;
   const nicePercent = nice.length
-    ? (nice.reduce((sum, item) => sum + Number(item.score10 ?? item.similarity * 10), 0) /
+    ? (nice.reduce(
+        (sum, item) => sum + Number(item.score10 ?? item.similarity * 10),
+        0
+      ) /
         (nice.length * 10)) *
       100
     : 0;
 
   const gatePassed = must.length === 0 || mustPercent >= 80;
 
-  const exp = computeExperienceScore(meta.yearsExperience, jobConfig.experienceBand);
+  const exp = computeExperienceScore(
+    meta.yearsExperience,
+    jobConfig.experienceBand
+  );
   const quality = computeQualityScore(meta);
 
-  const finalScore = Math.round(
-    (0.5 * mustPercent + 0.2 * nicePercent + 0.2 * exp.score + 0.1 * quality.score) * 10,
-  ) / 10;
+  const finalScore =
+    Math.round(
+      (0.5 * mustPercent +
+        0.2 * nicePercent +
+        0.2 * exp.score +
+        0.1 * quality.score) *
+        10
+    ) / 10;
 
   let status: CandidateScores["status"] = "consider";
   if (!gatePassed || finalScore < 65 || duplicateOf) status = "excluded";
@@ -745,7 +793,7 @@ function buildAiNarrative(
   lang: Lang,
   copy: CopyKey,
   jobConfig: { experienceBand: string | null },
-  duplicateName?: string,
+  duplicateName?: string
 ): AiNarrative {
   const { scores, meta, analysis } = result;
   const texts = copy.insights;
@@ -767,23 +815,32 @@ function buildAiNarrative(
   }
 
   if (scores.mustPercent >= 85) {
-    strengths.push(fmt(texts.strengths.must, { value: formatPercent(scores.mustPercent) }));
+    strengths.push(
+      fmt(texts.strengths.must, { value: formatPercent(scores.mustPercent) })
+    );
   }
   if (scores.nicePercent >= 60) {
-    strengths.push(fmt(texts.strengths.nice, { value: formatPercent(scores.nicePercent) }));
+    strengths.push(
+      fmt(texts.strengths.nice, { value: formatPercent(scores.nicePercent) })
+    );
   }
   if (scores.experienceStatus === "within" && meta.yearsExperience != null) {
     strengths.push(
-      fmt(texts.strengths.experience, { value: formatPercent(meta.yearsExperience) }),
+      fmt(texts.strengths.experience, {
+        value: formatPercent(meta.yearsExperience),
+      })
     );
   }
   if (meta.languages.length > 1) {
     strengths.push(
-      fmt(texts.strengths.languages, { value: formatList(meta.languages, lang) || "" }),
+      fmt(texts.strengths.languages, {
+        value: formatList(meta.languages, lang) || "",
+      })
     );
   }
   if (meta.projects.length > 0 || meta.github.length || meta.linkedin.length) {
-    const total = meta.projects.length + meta.github.length + meta.linkedin.length;
+    const total =
+      meta.projects.length + meta.github.length + meta.linkedin.length;
     strengths.push(fmt(texts.strengths.projects, { value: String(total) }));
   }
   if (scores.qualityScore >= 70) {
@@ -791,7 +848,10 @@ function buildAiNarrative(
   }
 
   if (scores.experienceStatus === "below" && meta.yearsExperience != null) {
-    const band = experienceBands.find((b) => b.id === jobConfig.experienceBand ?? "");
+    // قبل: b.id === jobConfig.experienceBand ?? ""
+    const band = experienceBands.find(
+      (b) => b.id === (jobConfig.experienceBand ?? "")
+    );
     const target = band
       ? lang === "ar"
         ? band.label.ar
@@ -801,7 +861,7 @@ function buildAiNarrative(
       fmt(texts.weaknesses.experienceLow, {
         value: formatPercent(meta.yearsExperience),
         target: String(target),
-      }),
+      })
     );
   }
   if (scores.experienceStatus === "above") {
@@ -814,13 +874,15 @@ function buildAiNarrative(
     weaknesses.push(
       fmt(texts.weaknesses.missingMust, {
         items: formatList(scores.missingMust, lang),
-      }),
+      })
     );
   }
   const improve = (analysis.gaps as any)?.improve ?? [];
   if (improve.length) {
     weaknesses.push(
-      fmt(texts.weaknesses.aiGaps, { items: formatList(improve.slice(0, 5), lang) }),
+      fmt(texts.weaknesses.aiGaps, {
+        items: formatList(improve.slice(0, 5), lang),
+      })
     );
   }
 
@@ -840,7 +902,9 @@ export default function TalentWorkflow() {
   const [niceSkills, setNiceSkills] = React.useState<string[]>([]);
   const [mustInput, setMustInput] = React.useState("");
   const [niceInput, setNiceInput] = React.useState("");
-  const [experienceBand, setExperienceBand] = React.useState<string | null>(null);
+  const [experienceBand, setExperienceBand] = React.useState<string | null>(
+    null
+  );
   const [level, setLevel] = React.useState<string | null>(null);
   const [contract, setContract] = React.useState<string | null>(null);
   const [jobLanguages, setJobLanguages] = React.useState<string[]>([]);
@@ -862,14 +926,15 @@ export default function TalentWorkflow() {
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pinnedId, setPinnedId] = React.useState<string | null>(null);
   const [activeFilters, setActiveFilters] = React.useState<string[]>([]);
-  const [sortState, setSortState] = React.useState<{ key: SortKey; direction: "asc" | "desc" }>(
-    { key: "finalScore", direction: "desc" },
-  );
+  const [sortState, setSortState] = React.useState<{
+    key: SortKey;
+    direction: "asc" | "desc";
+  }>({ key: "finalScore", direction: "desc" });
   const [comparisonOpen, setComparisonOpen] = React.useState(false);
 
   const jobConfig = React.useMemo(
     () => ({ experienceBand, level, contract, languages: jobLanguages }),
-    [experienceBand, level, contract, jobLanguages],
+    [experienceBand, level, contract, jobLanguages]
   );
 
   React.useEffect(() => {
@@ -894,7 +959,7 @@ export default function TalentWorkflow() {
     const normalized = value.trim();
     if (!normalized) return;
     setMustSkills((prev) =>
-      prev.includes(normalized) ? prev : [...prev, normalized].slice(0, 20),
+      prev.includes(normalized) ? prev : [...prev, normalized].slice(0, 20)
     );
   }, []);
 
@@ -902,21 +967,24 @@ export default function TalentWorkflow() {
     const normalized = value.trim();
     if (!normalized) return;
     setNiceSkills((prev) =>
-      prev.includes(normalized) ? prev : [...prev, normalized].slice(0, 20),
+      prev.includes(normalized) ? prev : [...prev, normalized].slice(0, 20)
     );
   }, []);
 
-  const removeSkill = React.useCallback((type: "must" | "nice", value: string) => {
-    if (type === "must") {
-      setMustSkills((prev) => prev.filter((item) => item !== value));
-    } else {
-      setNiceSkills((prev) => prev.filter((item) => item !== value));
-    }
-  }, []);
+  const removeSkill = React.useCallback(
+    (type: "must" | "nice", value: string) => {
+      if (type === "must") {
+        setMustSkills((prev) => prev.filter((item) => item !== value));
+      } else {
+        setNiceSkills((prev) => prev.filter((item) => item !== value));
+      }
+    },
+    []
+  );
 
   const toggleLanguage = React.useCallback((id: string) => {
     setJobLanguages((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   }, []);
 
@@ -925,7 +993,10 @@ export default function TalentWorkflow() {
     if (!mustSkills.length && !niceSkills.length) {
       pushBanner({
         type: "error",
-        text: copy.notifications.error.replace("{message}", "Add requirements first"),
+        text: copy.notifications.error.replace(
+          "{message}",
+          "Add requirements first"
+        ),
       });
       throw new Error("no-requirements");
     }
@@ -933,8 +1004,16 @@ export default function TalentWorkflow() {
     setSavingJob(true);
     try {
       const requirements: JobRequirement[] = [
-        ...mustSkills.map((req) => ({ requirement: req, mustHave: true, weight: 2 })),
-        ...niceSkills.map((req) => ({ requirement: req, mustHave: false, weight: 1 })),
+        ...mustSkills.map((req) => ({
+          requirement: req,
+          mustHave: true,
+          weight: 2,
+        })),
+        ...niceSkills.map((req) => ({
+          requirement: req,
+          mustHave: false,
+          weight: 1,
+        })),
       ];
 
       const descriptionExtras = [
@@ -958,7 +1037,10 @@ export default function TalentWorkflow() {
     } catch (error: any) {
       pushBanner({
         type: "error",
-        text: copy.notifications.error.replace("{message}", error?.message || ""),
+        text: copy.notifications.error.replace(
+          "{message}",
+          error?.message || ""
+        ),
       });
       throw error;
     } finally {
@@ -1052,10 +1134,20 @@ export default function TalentWorkflow() {
       setUploads((prev) => [...prev, ...items]);
       pushBanner({
         type: "info",
-        text: copy.notifications.addedFiles.replace("{count}", String(items.length)),
+        text: copy.notifications.addedFiles.replace(
+          "{count}",
+          String(items.length)
+        ),
       });
     },
-    [uploads, copy.notifications.limitReached, copy.notifications.addedFiles, copy.uploads.duplicateReason, copy.uploads.ready, pushBanner],
+    [
+      uploads,
+      copy.notifications.limitReached,
+      copy.notifications.addedFiles,
+      copy.uploads.duplicateReason,
+      copy.uploads.ready,
+      pushBanner,
+    ]
   );
 
   const onDrop = React.useCallback(
@@ -1065,22 +1157,29 @@ export default function TalentWorkflow() {
       const files = event.dataTransfer?.files;
       if (files?.length) handleFiles(files);
     },
-    [handleFiles],
+    [handleFiles]
   );
 
-  const onDragOver = React.useCallback((event: React.DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }, []);
+  const onDragOver = React.useCallback(
+    (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    []
+  );
 
   const processUpload = React.useCallback(
     async (item: UploadItem, ensuredJobId: string) => {
       setUploads((prev) =>
         prev.map((entry) =>
           entry.id === item.id
-            ? { ...entry, status: "uploading", message: copy.uploads.status.uploading }
-            : entry,
-        ),
+            ? {
+                ...entry,
+                status: "uploading",
+                message: copy.uploads.status.uploading,
+              }
+            : entry
+        )
       );
 
       try {
@@ -1094,8 +1193,8 @@ export default function TalentWorkflow() {
                   cvId: uploadRes.cvId,
                   message: copy.uploads.status.analysing,
                 }
-              : entry,
-          ),
+              : entry
+          )
         );
 
         const analysisRes = (await analysesApi.run({
@@ -1104,18 +1203,24 @@ export default function TalentWorkflow() {
         })) as Analysis & { ok?: boolean; message?: string };
 
         const finalAnalysis = analysisRes.ok
-          ? ({ ...analysisRes, id: analysisRes.id } as Analysis & { message?: string })
+          ? ({ ...analysisRes, id: analysisRes.id } as Analysis & {
+              message?: string;
+            })
           : analysisRes;
 
         const cvDetails = await cvApi.getById(uploadRes.cvId).catch(() => null);
         const meta = parseCandidateMeta(
           cvDetails?.cv?.parsedText,
           item.name.replace(/\.[^.]+$/, ""),
-          cvDetails?.cv?.lang,
+          cvDetails?.cv?.lang
         );
 
         const duplicateEntry = resultsRef.current.find((candidate) => {
-          if (candidate.meta.displayName.toLowerCase() === meta.displayName.toLowerCase()) return true;
+          if (
+            candidate.meta.displayName.toLowerCase() ===
+            meta.displayName.toLowerCase()
+          )
+            return true;
           if (
             meta.email &&
             candidate.meta.email &&
@@ -1132,7 +1237,12 @@ export default function TalentWorkflow() {
           return false;
         });
 
-        const scores = computeScores(finalAnalysis, meta, { experienceBand }, duplicateEntry?.id);
+        const scores = computeScores(
+          finalAnalysis,
+          meta,
+          { experienceBand },
+          duplicateEntry?.id
+        );
 
         const candidate: CandidateResult = {
           id: randomId(),
@@ -1159,13 +1269,13 @@ export default function TalentWorkflow() {
                   message: scores.duplicateOf
                     ? copy.uploads.duplicateReason.replace(
                         "{reason}",
-                        duplicateEntry?.meta.displayName || "duplicate",
+                        duplicateEntry?.meta.displayName || "duplicate"
                       )
                     : copy.uploads.status.success,
                   resultId: candidate.id,
                 }
-              : entry,
-          ),
+              : entry
+          )
         );
 
         if (scores.duplicateOf) {
@@ -1178,10 +1288,13 @@ export default function TalentWorkflow() {
               ? {
                   ...entry,
                   status: "error",
-                  message: copy.notifications.error.replace("{message}", error?.message || ""),
+                  message: copy.notifications.error.replace(
+                    "{message}",
+                    error?.message || ""
+                  ),
                 }
-              : entry,
-          ),
+              : entry
+          )
         );
       }
     },
@@ -1194,7 +1307,7 @@ export default function TalentWorkflow() {
       copy.notifications.error,
       experienceBand,
       pushBanner,
-    ],
+    ]
   );
 
   const runBatch = React.useCallback(async () => {
@@ -1205,7 +1318,11 @@ export default function TalentWorkflow() {
       pushBanner({ type: "info", text: copy.notifications.processing });
       for (const item of uploads) {
         if (item.status === "success" || item.status === "duplicate") continue;
-        if (item.status === "pending" || item.status === "error" || item.status === "analysing") {
+        if (
+          item.status === "pending" ||
+          item.status === "error" ||
+          item.status === "analysing"
+        ) {
           await processUpload(item, ensuredJobId);
         }
       }
@@ -1215,7 +1332,15 @@ export default function TalentWorkflow() {
     } finally {
       setProcessing(false);
     }
-  }, [processing, ensureJob, uploads, processUpload, copy.notifications.processing, copy.notifications.finished, pushBanner]);
+  }, [
+    processing,
+    ensureJob,
+    uploads,
+    processUpload,
+    copy.notifications.processing,
+    copy.notifications.finished,
+    pushBanner,
+  ]);
 
   const retryUpload = React.useCallback(
     async (id: string) => {
@@ -1226,12 +1351,14 @@ export default function TalentWorkflow() {
         await processUpload({ ...item, status: "pending" }, ensuredJobId);
       } catch {}
     },
-    [uploads, ensureJob, processUpload],
+    [uploads, ensureJob, processUpload]
   );
 
   const toggleFilter = React.useCallback((filterId: string) => {
     setActiveFilters((prev) =>
-      prev.includes(filterId) ? prev.filter((id) => id !== filterId) : [...prev, filterId],
+      prev.includes(filterId)
+        ? prev.filter((id) => id !== filterId)
+        : [...prev, filterId]
     );
   }, []);
 
@@ -1239,7 +1366,7 @@ export default function TalentWorkflow() {
     setSelected((prev) =>
       prev.includes(candidateId)
         ? prev.filter((id) => id !== candidateId)
-        : [...prev, candidateId],
+        : [...prev, candidateId]
     );
   }, []);
 
@@ -1277,7 +1404,9 @@ export default function TalentWorkflow() {
       item.meta.lastCompany || "",
     ]);
     const csv = [header, ...rows]
-      .map((columns) => columns.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .map((columns) =>
+        columns.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -1302,7 +1431,7 @@ export default function TalentWorkflow() {
             <td>${item.meta.languages.join(", ")}</td>
             <td>${item.meta.lastCompany || ""}</td>
           </tr>
-        `,
+        `
       )
       .join("");
     const html = `
@@ -1359,7 +1488,7 @@ export default function TalentWorkflow() {
             <td>${item.meta.lastCompany || ""}</td>
             <td>${formatList(item.scores.missingMust, lang)}</td>
           </tr>
-        `,
+        `
       )
       .join("");
 
@@ -1400,7 +1529,14 @@ export default function TalentWorkflow() {
     win.document.close();
     win.focus();
     pushBanner({ type: "success", text: copy.report.generated });
-  }, [results, copy.managerReport, copy.table.columns, copy.report.generated, lang, pushBanner]);
+  }, [
+    results,
+    copy.managerReport,
+    copy.table.columns,
+    copy.report.generated,
+    lang,
+    pushBanner,
+  ]);
 
   const quickFilters = React.useMemo(
     () => [
@@ -1409,21 +1545,30 @@ export default function TalentWorkflow() {
       { id: "react", label: copy.filters.react },
       { id: "recommended", label: copy.filters.recommended },
     ],
-    [copy.filters],
+    [copy.filters]
   );
 
   const filteredResults = React.useMemo(() => {
     return results.filter((item) => {
-      if (activeFilters.includes("mustGate") && !item.scores.gatePassed) return false;
-      if (activeFilters.includes("recommended") && item.scores.status !== "recommended")
+      if (activeFilters.includes("mustGate") && !item.scores.gatePassed)
+        return false;
+      if (
+        activeFilters.includes("recommended") &&
+        item.scores.status !== "recommended"
+      )
         return false;
       if (activeFilters.includes("exp24")) {
-        if (!item.meta.yearsExperience || item.meta.yearsExperience < 2 || item.meta.yearsExperience > 4)
+        if (
+          !item.meta.yearsExperience ||
+          item.meta.yearsExperience < 2 ||
+          item.meta.yearsExperience > 4
+        )
           return false;
       }
       if (activeFilters.includes("react")) {
-        const hasReact = item.analysis.breakdown?.some((entry: any) =>
-          /react/i.test(entry.requirement) && Number(entry.score10 ?? 0) >= 7,
+        const hasReact = item.analysis.breakdown?.some(
+          (entry: any) =>
+            /react/i.test(entry.requirement) && Number(entry.score10 ?? 0) >= 7
         );
         if (!hasReact) return false;
       }
@@ -1442,9 +1587,14 @@ export default function TalentWorkflow() {
         case "nicePercent":
           return direction * (a.scores.nicePercent - b.scores.nicePercent);
         case "experience":
-          return direction * ((a.meta.yearsExperience || 0) - (b.meta.yearsExperience || 0));
+          return (
+            direction *
+            ((a.meta.yearsExperience || 0) - (b.meta.yearsExperience || 0))
+          );
         case "name":
-          return direction * a.meta.displayName.localeCompare(b.meta.displayName);
+          return (
+            direction * a.meta.displayName.localeCompare(b.meta.displayName)
+          );
         case "status":
           return direction * a.scores.status.localeCompare(b.scores.status);
         default:
@@ -1462,15 +1612,18 @@ export default function TalentWorkflow() {
   }, [filteredResults, sortState, pinnedId]);
 
   const comparisonCandidates = React.useMemo(
-    () => sortedResults.filter((item) => selected.includes(item.id)).slice(0, 4),
-    [sortedResults, selected],
+    () =>
+      sortedResults.filter((item) => selected.includes(item.id)).slice(0, 4),
+    [sortedResults, selected]
   );
 
   const duplicateMap = React.useMemo(() => {
     const map = new Map<string, string>();
     results.forEach((item) => {
       if (item.scores.duplicateOf) {
-        const target = results.find((candidate) => candidate.id === item.scores.duplicateOf);
+        const target = results.find(
+          (candidate) => candidate.id === item.scores.duplicateOf
+        );
         if (target) map.set(item.id, target.meta.displayName);
       }
     });
@@ -1491,7 +1644,7 @@ export default function TalentWorkflow() {
       { id: "step4", title: copy.steps.step4, hint: copy.steps.step4Hint },
       { id: "step5", title: copy.steps.step5, hint: copy.steps.step5Hint },
     ],
-    [copy.steps],
+    [copy.steps]
   );
 
   return (
@@ -1500,7 +1653,7 @@ export default function TalentWorkflow() {
         <div
           className={clsx(
             "flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm",
-            bannerClasses[banner.type],
+            bannerClasses[banner.type]
           )}
         >
           <span>{banner.text}</span>
@@ -1521,12 +1674,19 @@ export default function TalentWorkflow() {
             {copy.hero.badge}
           </span>
           <div>
-            <h1 className="text-3xl font-bold text-[#2F3A4A] sm:text-4xl">{copy.hero.title}</h1>
-            <p className="mt-2 max-w-3xl text-sm text-[#2F3A4A]/70">{copy.hero.subtitle}</p>
+            <h1 className="text-3xl font-bold text-[#2F3A4A] sm:text-4xl">
+              {copy.hero.title}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-[#2F3A4A]/70">
+              {copy.hero.subtitle}
+            </p>
           </div>
           <div className="grid grid-cols-1 gap-4 text-xs text-[#2F3A4A]/60 sm:grid-cols-2 xl:grid-cols-5">
             {stepHighlights.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4">
+              <div
+                key={item.id}
+                className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4"
+              >
                 <div className="text-[#D85E00] font-semibold">{item.title}</div>
                 <p className="mt-2 leading-relaxed">{item.hint}</p>
               </div>
@@ -1538,7 +1698,9 @@ export default function TalentWorkflow() {
       <section className="rounded-3xl border border-[#FFD7B0] bg-white/95 p-6 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-[#D85E00]">{copy.steps.step1}</h2>
+            <h2 className="text-xl font-semibold text-[#D85E00]">
+              {copy.steps.step1}
+            </h2>
             <p className="text-sm text-[#2F3A4A]/70">{copy.steps.step1Hint}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
@@ -1553,7 +1715,12 @@ export default function TalentWorkflow() {
               disabled={processing}
               className="inline-flex items-center gap-2 rounded-full bg-[#FF7A00] px-4 py-2 font-semibold text-white shadow hover:bg-[#D85E00] disabled:opacity-60"
             >
-              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />} {copy.buttons.startAnalysis}
+              {processing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <BarChart3 className="h-4 w-4" />
+              )}{" "}
+              {copy.buttons.startAnalysis}
             </button>
           </div>
         </div>
@@ -1583,17 +1750,23 @@ export default function TalentWorkflow() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4">
-              <div className="text-xs font-semibold text-[#D85E00]">{copy.fields.experience}</div>
+              <div className="text-xs font-semibold text-[#D85E00]">
+                {copy.fields.experience}
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {experienceBands.map((option) => (
                   <button
                     key={option.id}
-                    onClick={() => setExperienceBand((prev) => (prev === option.id ? null : option.id))}
+                    onClick={() =>
+                      setExperienceBand((prev) =>
+                        prev === option.id ? null : option.id
+                      )
+                    }
                     className={clsx(
                       "rounded-full border px-3 py-1 text-xs font-semibold transition",
                       experienceBand === option.id
                         ? "border-transparent bg-[#FF7A00] text-white"
-                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
                     option.label[lang]
@@ -1602,17 +1775,23 @@ export default function TalentWorkflow() {
               </div>
             </div>
             <div className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4">
-              <div className="text-xs font-semibold text-[#D85E00]">{copy.fields.level}</div>
+              <div className="text-xs font-semibold text-[#D85E00]">
+                {copy.fields.level}
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {levelOptions.map((option) => (
                   <button
                     key={option.id}
-                    onClick={() => setLevel((prev) => (prev === option.id ? null : option.id))}
+                    onClick={() =>
+                      setLevel((prev) =>
+                        prev === option.id ? null : option.id
+                      )
+                    }
                     className={clsx(
                       "rounded-full border px-3 py-1 text-xs font-semibold transition",
                       level === option.id
                         ? "border-transparent bg-[#FFB26B] text-[#2F3A4A]"
-                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
                     option.label[lang]
@@ -1621,17 +1800,23 @@ export default function TalentWorkflow() {
               </div>
             </div>
             <div className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4">
-              <div className="text-xs font-semibold text-[#D85E00]">{copy.fields.contract}</div>
+              <div className="text-xs font-semibold text-[#D85E00]">
+                {copy.fields.contract}
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {contractOptions.map((option) => (
                   <button
                     key={option.id}
-                    onClick={() => setContract((prev) => (prev === option.id ? null : option.id))}
+                    onClick={() =>
+                      setContract((prev) =>
+                        prev === option.id ? null : option.id
+                      )
+                    }
                     className={clsx(
                       "rounded-full border px-3 py-1 text-xs font-semibold transition",
                       contract === option.id
                         ? "border-transparent bg-[#FFB26B] text-[#2F3A4A]"
-                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
                     option.label[lang]
@@ -1640,7 +1825,9 @@ export default function TalentWorkflow() {
               </div>
             </div>
             <div className="rounded-2xl border border-[#FFE4C8] bg-white/80 p-4">
-              <div className="text-xs font-semibold text-[#D85E00]">{copy.fields.languages}</div>
+              <div className="text-xs font-semibold text-[#D85E00]">
+                {copy.fields.languages}
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {languageOptions.map((option) => (
                   <button
@@ -1650,7 +1837,7 @@ export default function TalentWorkflow() {
                       "rounded-full border px-3 py-1 text-xs font-semibold transition",
                       jobLanguages.includes(option.id)
                         ? "border-transparent bg-[#FF7A00] text-white"
-                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                        : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
                     option.label[lang]
@@ -1749,9 +1936,13 @@ export default function TalentWorkflow() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-[#FFE4C8] bg-white/70 p-4">
-          <div className="text-xs font-semibold text-[#D85E00]">{copy.fields.templates}</div>
+          <div className="text-xs font-semibold text-[#D85E00]">
+            {copy.fields.templates}
+          </div>
           {templates.length === 0 ? (
-            <p className="mt-3 text-xs text-[#2F3A4A]/60">{copy.fields.noTemplates}</p>
+            <p className="mt-3 text-xs text-[#2F3A4A]/60">
+              {copy.fields.noTemplates}
+            </p>
           ) : (
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               {templates.map((template) => (
@@ -1771,7 +1962,9 @@ export default function TalentWorkflow() {
       <section className="rounded-3xl border border-[#FFD7B0] bg-white/95 p-6 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-[#D85E00]">{copy.steps.step2}</h2>
+            <h2 className="text-xl font-semibold text-[#D85E00]">
+              {copy.steps.step2}
+            </h2>
             <p className="text-sm text-[#2F3A4A]/70">{copy.steps.step2Hint}</p>
           </div>
           <div className="text-xs text-[#2F3A4A]/50">
@@ -1785,7 +1978,9 @@ export default function TalentWorkflow() {
           className="mt-6 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-[#FFB26B] bg-[#FFF0E0]/60 px-6 py-12 text-center transition hover:border-[#FF7A00] hover:bg-[#FFF0E0]"
         >
           <UploadCloud className="h-10 w-10 text-[#FF7A00]" />
-          <div className="text-sm font-semibold text-[#D85E00]">{copy.uploads.dropLabel}</div>
+          <div className="text-sm font-semibold text-[#D85E00]">
+            {copy.uploads.dropLabel}
+          </div>
           <div className="text-xs text-[#2F3A4A]/60">{copy.uploads.limit}</div>
           <span className="rounded-full bg-white px-4 py-1 text-xs font-semibold text-[#FF7A00] shadow">
             {copy.uploads.browse}
@@ -1804,30 +1999,54 @@ export default function TalentWorkflow() {
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {uploads.map((item) => (
-            <div key={item.id} className="flex flex-col rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm">
+            <div
+              key={item.id}
+              className="flex flex-col rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A]">
                     <FileText className="h-4 w-4 text-[#FF7A00]" />
                     <span className="line-clamp-1">{item.name}</span>
                   </div>
-                  <div className="mt-1 text-xs text-[#2F3A4A]/60">{formatBytes(item.size)}</div>
+                  <div className="mt-1 text-xs text-[#2F3A4A]/60">
+                    {formatBytes(item.size)}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
-                  {item.status === "success" && <CheckCircle2 className="h-4 w-4 text-[#16A34A]" />}
-                  {item.status === "duplicate" && <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />}
-                  {item.status === "error" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                  <button onClick={() => removeUpload(item.id)} className="rounded-full bg-[#FFF0E0] p-1 text-[#D85E00]">
+                  {item.status === "success" && (
+                    <CheckCircle2 className="h-4 w-4 text-[#16A34A]" />
+                  )}
+                  {item.status === "duplicate" && (
+                    <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />
+                  )}
+                  {item.status === "error" && (
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                  )}
+                  <button
+                    onClick={() => removeUpload(item.id)}
+                    className="rounded-full bg-[#FFF0E0] p-1 text-[#D85E00]"
+                  >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
               <div className="mt-3 flex items-center gap-2 text-xs text-[#2F3A4A]/70">
-                {item.status === "uploading" && <Loader2 className="h-4 w-4 animate-spin text-[#FF7A00]" />}
-                {item.status === "analysing" && <Loader2 className="h-4 w-4 animate-spin text-[#D85E00]" />}
-                {item.status === "success" && <CheckCircle2 className="h-4 w-4 text-[#16A34A]" />}
-                {item.status === "duplicate" && <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />}
-                {item.status === "error" && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                {item.status === "uploading" && (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#FF7A00]" />
+                )}
+                {item.status === "analysing" && (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#D85E00]" />
+                )}
+                {item.status === "success" && (
+                  <CheckCircle2 className="h-4 w-4 text-[#16A34A]" />
+                )}
+                {item.status === "duplicate" && (
+                  <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />
+                )}
+                {item.status === "error" && (
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                )}
                 <span>{item.message}</span>
               </div>
               {item.status === "error" && (
@@ -1846,7 +2065,9 @@ export default function TalentWorkflow() {
       <section className="rounded-3xl border border-[#FFD7B0] bg-white/95 p-6 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-[#D85E00]">{copy.steps.step3}</h2>
+            <h2 className="text-xl font-semibold text-[#D85E00]">
+              {copy.steps.step3}
+            </h2>
             <p className="text-sm text-[#2F3A4A]/70">{copy.steps.step3Hint}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
@@ -1886,7 +2107,9 @@ export default function TalentWorkflow() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Filter className="h-4 w-4 text-[#FF7A00]" />
-          <span className="text-xs font-semibold text-[#2F3A4A]/70">{copy.table.filtersTitle}</span>
+          <span className="text-xs font-semibold text-[#2F3A4A]/70">
+            {copy.table.filtersTitle}
+          </span>
           <div className="flex flex-wrap gap-2 text-xs">
             {quickFilters.map((filter) => (
               <button
@@ -1896,7 +2119,7 @@ export default function TalentWorkflow() {
                   "rounded-full border px-3 py-1 font-semibold transition",
                   activeFilters.includes(filter.id)
                     ? "border-transparent bg-[#FF7A00] text-white"
-                    : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                    : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                 )}
               >
                 {filter.label}
@@ -1905,7 +2128,10 @@ export default function TalentWorkflow() {
           </div>
           {selected.length > 0 && (
             <span className="text-xs text-[#2F3A4A]/60">
-              {copy.table.selectedCount.replace("{count}", String(selected.length))}
+              {copy.table.selectedCount.replace(
+                "{count}",
+                String(selected.length)
+              )}
             </span>
           )}
         </div>
@@ -1921,7 +2147,10 @@ export default function TalentWorkflow() {
                     onClick={() =>
                       setSortState((prev) => ({
                         key: "name",
-                        direction: prev.key === "name" && prev.direction === "asc" ? "desc" : "asc",
+                        direction:
+                          prev.key === "name" && prev.direction === "asc"
+                            ? "desc"
+                            : "asc",
                       }))
                     }
                   >
@@ -1940,7 +2169,10 @@ export default function TalentWorkflow() {
                     onClick={() =>
                       setSortState((prev) => ({
                         key: "experience",
-                        direction: prev.key === "experience" && prev.direction === "asc" ? "desc" : "asc",
+                        direction:
+                          prev.key === "experience" && prev.direction === "asc"
+                            ? "desc"
+                            : "asc",
                       }))
                     }
                   >
@@ -1959,7 +2191,10 @@ export default function TalentWorkflow() {
                     onClick={() =>
                       setSortState((prev) => ({
                         key: "mustPercent",
-                        direction: prev.key === "mustPercent" && prev.direction === "asc" ? "desc" : "asc",
+                        direction:
+                          prev.key === "mustPercent" && prev.direction === "asc"
+                            ? "desc"
+                            : "asc",
                       }))
                     }
                   >
@@ -1978,7 +2213,10 @@ export default function TalentWorkflow() {
                     onClick={() =>
                       setSortState((prev) => ({
                         key: "nicePercent",
-                        direction: prev.key === "nicePercent" && prev.direction === "asc" ? "desc" : "asc",
+                        direction:
+                          prev.key === "nicePercent" && prev.direction === "asc"
+                            ? "desc"
+                            : "asc",
                       }))
                     }
                   >
@@ -1997,7 +2235,10 @@ export default function TalentWorkflow() {
                     onClick={() =>
                       setSortState((prev) => ({
                         key: "finalScore",
-                        direction: prev.key === "finalScore" && prev.direction === "asc" ? "desc" : "asc",
+                        direction:
+                          prev.key === "finalScore" && prev.direction === "asc"
+                            ? "desc"
+                            : "asc",
                       }))
                     }
                   >
@@ -2019,7 +2260,10 @@ export default function TalentWorkflow() {
             <tbody className="divide-y divide-[#FFE4C8]">
               {sortedResults.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-6 text-center text-xs text-[#2F3A4A]/60">
+                  <td
+                    colSpan={10}
+                    className="px-4 py-6 text-center text-xs text-[#2F3A4A]/60"
+                  >
                     {copy.table.empty}
                   </td>
                 </tr>
@@ -2030,7 +2274,7 @@ export default function TalentWorkflow() {
                   lang,
                   copy,
                   { experienceBand },
-                  duplicateMap.get(item.id),
+                  duplicateMap.get(item.id)
                 );
                 return (
                   <tr key={item.id} className="bg-white/60">
@@ -2043,12 +2287,16 @@ export default function TalentWorkflow() {
                           className="h-4 w-4 rounded border-[#FF7A00]/40 text-[#FF7A00] focus:ring-[#FF7A00]"
                         />
                         <button
-                          onClick={() => setPinnedId((prev) => (prev === item.id ? null : item.id))}
+                          onClick={() =>
+                            setPinnedId((prev) =>
+                              prev === item.id ? null : item.id
+                            )
+                          }
                           className={clsx(
                             "rounded-full border px-2 py-1 text-[10px] font-semibold transition",
                             pinnedId === item.id
                               ? "border-transparent bg-[#FF7A00] text-white"
-                              : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10",
+                              : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                           )}
                         >
                           <Pin className="h-3 w-3" />
@@ -2056,11 +2304,17 @@ export default function TalentWorkflow() {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="font-semibold text-[#2F3A4A]">{item.meta.displayName}</div>
-                      <div className="text-xs text-[#2F3A4A]/60">{item.fileName}</div>
+                      <div className="font-semibold text-[#2F3A4A]">
+                        {item.meta.displayName}
+                      </div>
+                      <div className="text-xs text-[#2F3A4A]/60">
+                        {item.fileName}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-center text-sm text-[#2F3A4A]">
-                      {item.meta.yearsExperience != null ? `${item.meta.yearsExperience}` : "—"}
+                      {item.meta.yearsExperience != null
+                        ? `${item.meta.yearsExperience}`
+                        : "—"}
                     </td>
                     <td className="px-3 py-3">
                       <div className="rounded-full bg-[#FF7A00]/10 px-2 py-1 text-center text-xs font-semibold text-[#D85E00]">
@@ -2078,11 +2332,17 @@ export default function TalentWorkflow() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-xs text-[#2F3A4A]/70">
-                      {item.meta.languages.length ? item.meta.languages.join(" • ") : "—"}
+                      {item.meta.languages.length
+                        ? item.meta.languages.join(" • ")
+                        : "—"}
                     </td>
-                    <td className="px-3 py-3 text-xs text-[#2F3A4A]/70">{item.meta.lastCompany || "—"}</td>
+                    <td className="px-3 py-3 text-xs text-[#2F3A4A]/70">
+                      {item.meta.lastCompany || "—"}
+                    </td>
                     <td className="px-3 py-3 text-xs text-[#2F3A4A]/80">
-                      <div className="font-semibold text-[#D85E00]">{narrative.summary}</div>
+                      <div className="font-semibold text-[#D85E00]">
+                        {narrative.summary}
+                      </div>
                       {narrative.strengths.length > 0 && (
                         <ul className="mt-1 list-disc ps-5 text-[11px] text-[#16A34A]">
                           {narrative.strengths.map((line, index) => (
@@ -2102,12 +2362,21 @@ export default function TalentWorkflow() {
                       <span
                         className={clsx(
                           "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
-                          item.scores.status === "recommended" && "bg-[#16A34A]/10 text-[#16A34A]",
-                          item.scores.status === "consider" && "bg-[#FF7A00]/10 text-[#D85E00]",
-                          item.scores.status === "excluded" && "bg-red-100 text-red-600",
+                          item.scores.status === "recommended" &&
+                            "bg-[#16A34A]/10 text-[#16A34A]",
+                          item.scores.status === "consider" &&
+                            "bg-[#FF7A00]/10 text-[#D85E00]",
+                          item.scores.status === "excluded" &&
+                            "bg-red-100 text-red-600"
                         )}
                       >
-                        {copy.statuses[item.scores.duplicateOf ? "duplicate" : item.scores.status]}
+                        {
+                          copy.statuses[
+                            item.scores.duplicateOf
+                              ? "duplicate"
+                              : item.scores.status
+                          ]
+                        }
                       </span>
                     </td>
                   </tr>
@@ -2134,9 +2403,13 @@ export default function TalentWorkflow() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-[#D85E00]">{copy.comparison.title}</h3>
+                  <h3 className="text-lg font-semibold text-[#D85E00]">
+                    {copy.comparison.title}
+                  </h3>
                   <p className="text-xs text-[#2F3A4A]/60">
-                    {comparisonCandidates.length < 2 ? copy.comparison.empty : copy.steps.step4Hint}
+                    {comparisonCandidates.length < 2
+                      ? copy.comparison.empty
+                      : copy.steps.step4Hint}
                   </p>
                 </div>
                 <button
@@ -2155,34 +2428,54 @@ export default function TalentWorkflow() {
                       lang,
                       copy,
                       { experienceBand },
-                      duplicateMap.get(item.id),
+                      duplicateMap.get(item.id)
                     );
                     return (
-                      <div key={item.id} className="rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm">
+                      <div
+                        key={item.id}
+                        className="rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm"
+                      >
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="text-sm font-semibold text-[#2F3A4A]">{item.meta.displayName}</div>
+                            <div className="text-sm font-semibold text-[#2F3A4A]">
+                              {item.meta.displayName}
+                            </div>
                             <div className="text-xs text-[#2F3A4A]/60">
-                              {item.meta.yearsExperience != null ? `${item.meta.yearsExperience} yrs` : "—"}
+                              {item.meta.yearsExperience != null
+                                ? `${item.meta.yearsExperience} yrs`
+                                : "—"}
                             </div>
                           </div>
                           <span
                             className={clsx(
                               "rounded-full px-3 py-1 text-xs font-semibold",
-                              item.scores.status === "recommended" && "bg-[#16A34A]/10 text-[#16A34A]",
-                              item.scores.status === "consider" && "bg-[#FF7A00]/10 text-[#D85E00]",
-                              item.scores.status === "excluded" && "bg-red-100 text-red-600",
+                              item.scores.status === "recommended" &&
+                                "bg-[#16A34A]/10 text-[#16A34A]",
+                              item.scores.status === "consider" &&
+                                "bg-[#FF7A00]/10 text-[#D85E00]",
+                              item.scores.status === "excluded" &&
+                                "bg-red-100 text-red-600"
                             )}
                           >
-                            {copy.statuses[item.scores.duplicateOf ? "duplicate" : item.scores.status]}
+                            {
+                              copy.statuses[
+                                item.scores.duplicateOf
+                                  ? "duplicate"
+                                  : item.scores.status
+                              ]
+                            }
                           </span>
                         </div>
                         <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">{copy.comparison.recommendation}</div>
+                          <div className="font-semibold text-[#D85E00]">
+                            {copy.comparison.recommendation}
+                          </div>
                           <div className="mt-1">{narrative.summary}</div>
                         </div>
                         <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#16A34A]">{copy.comparison.strengths}</div>
+                          <div className="font-semibold text-[#16A34A]">
+                            {copy.comparison.strengths}
+                          </div>
                           {narrative.strengths.length ? (
                             <ul className="mt-1 list-disc ps-4">
                               {narrative.strengths.map((line, index) => (
@@ -2194,7 +2487,9 @@ export default function TalentWorkflow() {
                           )}
                         </div>
                         <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">{copy.comparison.weaknesses}</div>
+                          <div className="font-semibold text-[#D85E00]">
+                            {copy.comparison.weaknesses}
+                          </div>
                           {narrative.weaknesses.length ? (
                             <ul className="mt-1 list-disc ps-4">
                               {narrative.weaknesses.map((line, index) => (
@@ -2207,13 +2502,19 @@ export default function TalentWorkflow() {
                         </div>
                         <div className="mt-3 grid gap-2 text-xs text-[#2F3A4A]/70">
                           <div>
-                            <span className="font-semibold text-[#D85E00]">{copy.comparison.skills}:</span>{" "}
+                            <span className="font-semibold text-[#D85E00]">
+                              {copy.comparison.skills}:
+                            </span>{" "}
                             {formatList(item.meta.languages, lang) || "—"}
                           </div>
                           <div>
-                            <span className="font-semibold text-[#D85E00]">{copy.comparison.projects}:</span>{" "}
+                            <span className="font-semibold text-[#D85E00]">
+                              {copy.comparison.projects}:
+                            </span>{" "}
                             {item.meta.projects.length
-                              ? item.meta.projects.map((p) => p.url || p.label).join(" • ")
+                              ? item.meta.projects
+                                  .map((p) => p.url || p.label)
+                                  .join(" • ")
                               : "—"}
                           </div>
                         </div>
@@ -2226,6 +2527,6 @@ export default function TalentWorkflow() {
           </motion.div>
         )}
       </AnimatePresence>
-
     </div>
   );
+}
