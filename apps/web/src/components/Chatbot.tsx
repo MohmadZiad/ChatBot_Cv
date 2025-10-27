@@ -12,6 +12,11 @@ import { analysesApi, type Analysis } from "@/services/api/analyses";
 
 type Msg = { role: "bot" | "user" | "sys"; text: string };
 
+type CompletedEventDetail = {
+  analysis: Analysis;
+  job?: { id?: string | null } | null;
+};
+
 /** Safe helper to read language from localStorage (client-only). */
 function getLangFromStorage(): Lang {
   try {
@@ -75,6 +80,26 @@ export default function Chatbot() {
       .then((r) => setJobs(r.items))
       .catch(() => {});
   }, [open]);
+
+  useEffect(() => {
+    const onCompleted = (event: Event) => {
+      const detail = (event as CustomEvent<CompletedEventDetail>).detail;
+      if (!detail?.analysis) return;
+      const analysis: Analysis = detail.analysis;
+      setResult(analysis);
+      if (detail?.job?.id) setJobId(detail.job.id);
+      if (analysis.cvId) setCvId(analysis.cvId);
+      setMsgs((prev) => [
+        ...prev,
+        {
+          role: "bot",
+          text: `${tt("chat.done")} • ${tt("chat.score")}: ${Number(analysis.score ?? 0).toFixed(2)}`,
+        },
+      ]);
+    };
+    window.addEventListener("analysis:completed", onCompleted as EventListener);
+    return () => window.removeEventListener("analysis:completed", onCompleted as EventListener);
+  }, [tt]);
 
   // Ask AI to suggest requirements from a JD blob
   const handleSuggest = async () => {

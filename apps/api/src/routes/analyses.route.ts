@@ -63,6 +63,20 @@ export async function analysesRoute(app: FastifyInstance) {
           score: a.score ? Number(a.score) : 0,
           breakdown: [], // لا يوجد تفصيل لأن ما في نص
           gaps: null,
+          metrics: {
+            totalRequirements: 0,
+            mustCount: 0,
+            niceCount: 0,
+            mustPercent: 0,
+            nicePercent: 0,
+            weightedScore: 0,
+            gatePassed: false,
+            missingMust: [],
+            improvement: [],
+            topStrengths: [],
+            riskFlags: ["no_text"],
+            generatedAt: new Date().toISOString(),
+          },
           message:
             "لم يُستخرج نص كافٍ من السيرة الذاتية، تم إنشاء تحليل رمزي. رجاءً ارفع ملف PDF نصّي واضح أو DOCX.",
           createdAt: a.createdAt.toISOString(),
