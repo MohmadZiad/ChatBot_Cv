@@ -1,6 +1,6 @@
 // apps/api/src/services/analysis.ts
 import { prisma } from "../db/client";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { embedTexts } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvEmbeddings } from "./embeddings.js";
@@ -27,8 +27,9 @@ function gapsFrom(perReq: any[]) {
   return { mustHaveMissing: missing, improve };
 }
 
-// وحّدنا اسم المتغيّر (مع S)
+// نماذج الذكاء المستخدمة في الحسابات والتحليلات
 const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
+const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
 
 export async function runAnalysis(jobId: string, cvId: string) {
   // تأكيد وجود embeddings للـ CV (وتوليدها إذا ناقصة)
@@ -190,7 +191,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       gaps: gapDetails as any,
       metrics: metrics as any,
 
-      model: EMB_MODEL,
+      model: `${ANALYSIS_MODEL} | ${EMB_MODEL}`,
     },
   });
 
@@ -201,5 +202,291 @@ export async function runAnalysis(jobId: string, cvId: string) {
     evidence,
     gaps: gapDetails,
     metrics,
+  };
+}
+
+type Lang = "ar" | "en";
+
+function meanVector(list: number[][]): number[] {
+  if (!list.length) return [];
+  const size = list[0]?.length ?? 0;
+  const acc = new Array(size).fill(0);
+  for (const vec of list) {
+    for (let i = 0; i < size && i < vec.length; i++) {
+      acc[i] += vec[i];
+    }
+  }
+  const denom = list.length || 1;
+  return acc.map((value) => value / denom);
+}
+
+function serializeMetrics(metrics: any | null | undefined) {
+  if (!metrics) return null;
+  if (typeof metrics !== "object") return null;
+  return metrics as any;
+}
+
+export async function compareCvEmbeddings(cvIds: string[]) {
+  const uniqueIds = Array.from(new Set(cvIds.filter(Boolean)));
+  if (uniqueIds.length < 2)
+    throw httpError("يلزم اختيار سيرتين ذاتيتين على الأقل للمقارنة.");
+
+  await Promise.all(uniqueIds.map((id) => ensureCvEmbeddings(id)));
+
+  const rows = await prisma.$queryRaw<
+    { cvId: string; embedding: number[] }[]
+  >(
+    Prisma.sql`
+      SELECT "cvId", (embedding::real[]) AS embedding
+      FROM "CVChunk"
+      WHERE "cvId" IN (${Prisma.join(
+        uniqueIds.map((id) => Prisma.sql`${id}`)
+      )})
+        AND embedding IS NOT NULL
+    `
+  );
+
+  const byCv = new Map<string, number[][]>();
+  for (const row of rows) {
+    const list = byCv.get(row.cvId) ?? [];
+    list.push(row.embedding || []);
+    byCv.set(row.cvId, list);
+  }
+
+  const vectors = new Map<string, number[]>();
+  for (const [cvId, list] of byCv.entries()) {
+    const mean = meanVector(list);
+    if (mean.length) vectors.set(cvId, mean);
+  }
+
+  const entries = Array.from(vectors.entries());
+  const pairs: { a: string; b: string; similarity: number }[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const sim = cosine(entries[i][1], entries[j][1]);
+      pairs.push({
+        a: entries[i][0],
+        b: entries[j][0],
+        similarity: Number((sim * 100).toFixed(2)),
+      });
+    }
+  }
+
+  const meta = await prisma.cV.findMany({
+    where: { id: { in: uniqueIds } },
+    select: {
+      id: true,
+      originalFilename: true,
+      createdAt: true,
+      lang: true,
+    },
+  });
+
+  pairs.sort((a, b) => b.similarity - a.similarity);
+
+  const highlights = pairs.map((pair) => {
+    const a = meta.find((m) => m.id === pair.a);
+    const b = meta.find((m) => m.id === pair.b);
+    const nameA = a?.originalFilename || pair.a.slice(0, 8);
+    const nameB = b?.originalFilename || pair.b.slice(0, 8);
+    let label: string;
+    if (pair.similarity >= 85) {
+      label = `تشابه مرتفع جدًا (${pair.similarity}%) بين ${nameA} و${nameB}.`;
+    } else if (pair.similarity >= 65) {
+      label = `تشابه قوي (${pair.similarity}%) بين ${nameA} و${nameB}.`;
+    } else {
+      label = `تشابه محدود (${pair.similarity}%) بين ${nameA} و${nameB}.`;
+    }
+    return label;
+  });
+
+  return {
+    pairs,
+    meta: meta.map((m) => ({
+      id: m.id,
+      name: m.originalFilename || m.id,
+      createdAt: m.createdAt?.toISOString?.() ?? null,
+      lang: m.lang,
+    })),
+    insights: highlights,
+  };
+}
+
+export async function recommendTopCandidates(
+  jobId: string,
+  cvIds: string[],
+  top = 3
+) {
+  if (!jobId) throw httpError("jobId مطلوب", 400, "BAD_INPUT");
+  const job = await prisma.job.findUnique({
+    where: { id: jobId },
+    include: { requirements: true },
+  });
+  if (!job) throw httpError("الوظيفة غير موجودة", 404, "JOB_NOT_FOUND");
+
+  const uniqueIds = Array.from(new Set(cvIds.filter(Boolean)));
+  if (!uniqueIds.length)
+    throw httpError("اختر سيرًا ذاتية للمقارنة", 400, "NO_CV_IDS");
+
+  await Promise.all(uniqueIds.map((id) => ensureCvEmbeddings(id)));
+
+  const existing = await prisma.analysis.findMany({
+    where: { jobId, cvId: { in: uniqueIds } },
+  });
+  const missing = uniqueIds.filter(
+    (id) => !existing.some((analysis) => analysis.cvId === id)
+  );
+
+  for (const id of missing) {
+    try {
+      await runAnalysis(jobId, id);
+    } catch (err) {
+      // لو فشل تحليل CV معين نستمر مع البقية
+    }
+  }
+
+  const analyses = await prisma.analysis.findMany({
+    where: { jobId, cvId: { in: uniqueIds } },
+    include: { cv: true },
+    orderBy: { score: "desc" },
+  });
+
+  const ranking = analyses.map((analysis) => {
+    const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
+    const weighted = metrics?.weightedScore ?? analysis.score ?? 0;
+    const mustPercent = metrics?.mustPercent ?? 0;
+    const nicePercent = metrics?.nicePercent ?? 0;
+    const missingMust: string[] = metrics?.missingMust || [];
+    const improvement: string[] = metrics?.improvement || [];
+    return {
+      cvId: analysis.cvId,
+      fileName: analysis.cv?.originalFilename || analysis.cvId,
+      score: Number(weighted),
+      mustPercent: Number(mustPercent),
+      nicePercent: Number(nicePercent),
+      gatePassed:
+        typeof metrics?.gatePassed === "boolean"
+          ? metrics.gatePassed
+          : mustPercent >= 80,
+      missingMust,
+      improvement,
+    };
+  });
+
+  ranking.sort((a, b) => Number(b.score) - Number(a.score));
+  const best = ranking.slice(0, Math.min(top, ranking.length));
+
+  const summary = best.map((item, idx) => {
+    const prefix = `#${idx + 1} ${item.fileName}`;
+    const parts = [
+      `${prefix} — درجة ${Number(item.score).toFixed(1)} / 10`,
+      `تغطية المتطلبات الحرجة ${Number(item.mustPercent).toFixed(1)}%`,
+    ];
+    if (item.missingMust.length) {
+      parts.push(`يفتقد إلى: ${item.missingMust.slice(0, 3).join("، ")}`);
+    }
+    return parts.join(" • ");
+  });
+
+  return {
+    job: { id: job.id, title: job.title },
+    ranking,
+    top: best,
+    summary,
+  };
+}
+
+export async function improvementSuggestions(
+  jobId: string,
+  cvId: string,
+  lang: Lang = "ar"
+) {
+  if (!jobId || !cvId)
+    throw httpError("jobId و cvId مطلوبان", 400, "BAD_INPUT");
+
+  await ensureCvEmbeddings(cvId);
+
+  const [job, cv] = await Promise.all([
+    prisma.job.findUnique({
+      where: { id: jobId },
+      include: { requirements: true },
+    }),
+    prisma.cV.findUnique({ where: { id: cvId } }),
+  ]);
+
+  if (!job) throw httpError("الوظيفة غير موجودة", 404, "JOB_NOT_FOUND");
+  if (!cv) throw httpError("السيرة الذاتية غير موجودة", 404, "CV_NOT_FOUND");
+
+  const latest = await prisma.analysis.findFirst({
+    where: { jobId, cvId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const analysis = latest ?? (await runAnalysis(jobId, cvId));
+  const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
+
+  const missingMust: string[] = metrics?.missingMust || [];
+  const improvement: string[] = metrics?.improvement || [];
+  const mustPercent = Number(metrics?.mustPercent ?? 0);
+  const nicePercent = Number(metrics?.nicePercent ?? 0);
+  const score = Number(metrics?.weightedScore ?? analysis.score ?? 0);
+
+  const suggestions: string[] = [];
+  if (missingMust.length) {
+    suggestions.push(
+      (lang === "ar"
+        ? `أضف خبرات واضحة حول المتطلبات الأساسية التالية: ${missingMust.join("، ")}.`
+        : `Add explicit experience covering these must-have items: ${missingMust.join(", ")}.`)
+    );
+  }
+  if (improvement.length) {
+    suggestions.push(
+      (lang === "ar"
+        ? `عزّز السيرة الذاتية بإنجازات أو أرقام حول: ${improvement.join("، ")}.`
+        : `Strengthen the CV with concrete achievements for: ${improvement.join(", ")}.`)
+    );
+  }
+  if (nicePercent < 60) {
+    suggestions.push(
+      lang === "ar"
+        ? "حاول إبراز المهارات الإضافية لرفع نسبة الـNice-to-have أعلى من 60%."
+        : "Highlight complementary skills to push the nice-to-have coverage above 60%."
+    );
+  }
+  if (!suggestions.length) {
+    suggestions.push(
+      lang === "ar"
+        ? "السيرة الذاتية قوية جدًا مقابل الوظيفة. راجع التنسيق وأضف إنجازًا حديثًا لدعم النتيجة."
+        : "This CV is already strong for the role. Refresh formatting and add a recent win to keep it sharp."
+    );
+  }
+
+  const summary =
+    lang === "ar"
+      ? `درجة المطابقة الحالية ${score.toFixed(1)} / 10 مع تغطية ${mustPercent.toFixed(
+          1
+        )}% من المتطلبات الأساسية.`
+      : `Current alignment score ${score.toFixed(1)} / 10 covering ${mustPercent.toFixed(
+          1
+        )}% of must-have requirements.`;
+
+  return {
+    summary,
+    suggestions,
+    metrics: {
+      score,
+      mustPercent,
+      nicePercent,
+      missingMust,
+      improvement,
+    },
+    cv: {
+      id: cv.id,
+      name: cv.originalFilename || cv.id,
+    },
+    job: {
+      id: job.id,
+      title: job.title,
+    },
   };
 }

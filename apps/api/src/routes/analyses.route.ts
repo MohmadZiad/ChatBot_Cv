@@ -1,7 +1,12 @@
 // apps/api/src/routes/analyses.route.ts
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
-import { runAnalysis } from "../services/analysis";
+import {
+  runAnalysis,
+  compareCvEmbeddings,
+  recommendTopCandidates,
+  improvementSuggestions,
+} from "../services/analysis";
 
 const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
 
@@ -129,5 +134,61 @@ export async function analysesRoute(app: FastifyInstance) {
       createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     }));
+  });
+
+  app.post("/compare", async (req, reply) => {
+    try {
+      const { cvIds = [] } = (await req.body) as any;
+      const res = await compareCvEmbeddings(Array.isArray(cvIds) ? cvIds : []);
+      return { ok: true, ...res };
+    } catch (err: any) {
+      app.log.error({ err }, "compare embeddings failed");
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
+        ok: false,
+        code: err?.code || "COMPARE_FAILED",
+        message: err?.message || "compare failed",
+      });
+    }
+  });
+
+  app.post("/pick-best", async (req, reply) => {
+    try {
+      const { jobId, cvIds = [], top } = (await req.body) as any;
+      const res = await recommendTopCandidates(
+        jobId,
+        Array.isArray(cvIds) ? cvIds : [],
+        Number(top) || 3
+      );
+      return { ok: true, ...res };
+    } catch (err: any) {
+      app.log.error({ err }, "pick best failed");
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
+        ok: false,
+        code: err?.code || "PICK_FAILED",
+        message: err?.message || "pick best failed",
+      });
+    }
+  });
+
+  app.post("/improve", async (req, reply) => {
+    try {
+      const { jobId, cvId, lang } = (await req.body) as any;
+      const response = await improvementSuggestions(
+        jobId,
+        cvId,
+        lang === "en" ? "en" : "ar"
+      );
+      return { ok: true, ...response };
+    } catch (err: any) {
+      app.log.error({ err }, "improve suggestions failed");
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
+        ok: false,
+        code: err?.code || "IMPROVE_FAILED",
+        message: err?.message || "improvement failed",
+      });
+    }
   });
 }

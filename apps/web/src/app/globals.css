@@ -2,13 +2,37 @@
 
 /* Light/Dark colors via CSS vars */
 :root {
-  --background: #ffffff;
-  --foreground: #111111;
+  --background: #f8f9fc;
+  --foreground: #222222;
+  --surface: #ffffff;
+  --surface-soft: #fff4e8;
+  --surface-muted: #eef2ff;
+  --color-primary: #ff7a00;
+  --color-primary-soft: #ff9b3a;
+  --color-secondary: #4a90e2;
+  --color-accent: #a259ff;
+  --color-border: #e0e0e0;
+  --color-text-muted: #666666;
+  --body-gradient: radial-gradient(circle at 20% 20%, rgba(255, 122, 0, 0.12), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(74, 144, 226, 0.12), transparent 60%),
+    linear-gradient(180deg, #f8f9fc 0%, #ffffff 55%, #f1f6ff 100%);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0b0f;
-    --foreground: #ededed;
+    --background: #121418;
+    --foreground: #f6f7fb;
+    --surface: #1b1f26;
+    --surface-soft: #1f2530;
+    --surface-muted: #202633;
+    --color-primary: #ff9f4a;
+    --color-primary-soft: #ffba73;
+    --color-secondary: #77b3ff;
+    --color-accent: #c89cff;
+    --color-border: #2f3642;
+    --color-text-muted: #b0b9c9;
+    --body-gradient: radial-gradient(circle at 20% 10%, rgba(255, 161, 70, 0.18), transparent 55%),
+      radial-gradient(circle at 80% 0%, rgba(119, 179, 255, 0.15), transparent 60%),
+      linear-gradient(180deg, #141821 0%, #0d1016 55%, #111621 100%);
   }
 }
 
@@ -24,7 +48,7 @@ body {
   height: 100%;
 }
 body {
-  background: var(--background);
+  background: var(--body-gradient);
   color: var(--foreground);
   font-family:
     var(--font-geist-sans),
@@ -51,3 +75,10 @@ body {
 }
 /* فقاعات لطيفة */
 .me-auto, .ms-auto { max-width: 85%; }
+
+.glass-card {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+  backdrop-filter: saturate(160%) blur(18px);
+  box-shadow: 0 24px 80px -48px rgba(20, 24, 36, 0.45);
+}
