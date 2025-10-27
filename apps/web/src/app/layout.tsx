@@ -49,24 +49,22 @@ export default function RootLayout({
       </head>
 
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh bg-gradient-to-br from-[#f8fafc] via-white to-[#eef2ff] dark:from-[#0b0b0f] dark:via-black dark:to-[#0c0f1a] text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh bg-[#FFF6EF] text-foreground dark:bg-[#1B120A]`}
       >
+        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-32 -end-32 h-[420px] w-[420px] rounded-full bg-[#FFB26B]/40 blur-3xl" />
+          <div className="absolute -bottom-40 -start-20 h-[520px] w-[520px] rounded-full bg-[#FF7A00]/20 blur-[160px]" />
+        </div>
         <Topbar />
-        <main className="mx-auto max-w-7xl px-4 py-10">
-          {/* خلفية دوائر متحركة خفيفة */}
-          <div className="pointer-events-none fixed -z-10 inset-0 overflow-hidden">
-            <div className="absolute -top-24 -end-24 size-72 rounded-full bg-blue-200/40 blur-3xl animate-pulse dark:bg-blue-900/30" />
-            <div className="absolute -bottom-24 -start-24 size-72 rounded-full bg-purple-200/40 blur-3xl animate-pulse [animation-delay:300ms] dark:bg-purple-900/30" />
-          </div>
+        <main className="relative mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6 lg:px-8">
           {children}
         </main>
-        <footer className="mx-auto max-w-7xl px-4 pb-8 text-xs text-black/60 dark:text-white/60">
-          <div className="flex items-center justify-between">
+        <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-[#2F3A4A]/70 dark:text-white/60 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              © {new Date().getFullYear()} •{" "}
-              {process.env.NEXT_PUBLIC_APP_NAME || "CV Matcher"}
+              © {new Date().getFullYear()} • {process.env.NEXT_PUBLIC_APP_NAME || "CV Matcher"}
             </span>
-            <span className="font-mono">Next.js • Tailwind • Motion</span>
+            <span className="font-mono text-[#D85E00] dark:text-[#FFB26B]">Private • Secure • Realtime Scoring</span>
           </div>
         </footer>
         <Chatbot />
