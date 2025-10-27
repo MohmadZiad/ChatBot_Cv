@@ -9,3 +9,6 @@ apps/api/keys/
 .env
 *.key
 *.pem
+.turbo/
+apps/*/.turbo/
+packages/*/.turbo/

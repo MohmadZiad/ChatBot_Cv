@@ -2,7 +2,12 @@
 "use client";
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { analysesApi, type Analysis } from "@/services/api/analyses";
+import {
+  analysesApi,
+  type Analysis,
+  type AnalysisMetrics,
+  type PerRequirement,
+} from "@/services/api/analyses";
 
 export default function ResultDetail() {
   const params = useParams<{ id: string }>();
@@ -21,6 +26,10 @@ export default function ResultDetail() {
   if (loading) return <div className="max-w-3xl mx-auto">Loading...</div>;
   if (!data) return <div className="max-w-3xl mx-auto">Not found</div>;
 
+  const metrics = (data.metrics ?? null) as AnalysisMetrics | null;
+  const formatPct = (value: number | null | undefined) =>
+    `${Math.max(0, Math.min(100, value ?? 0)).toFixed(1)}%`;
+
   return (
     <div className="max-w-3xl mx-auto">
       <h1 className="text-lg font-bold mb-3">نتيجة التحليل</h1>
@@ -38,6 +47,19 @@ export default function ResultDetail() {
             model: {data.model}
           </div>
         )}
+        {metrics && (
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            <div className="rounded-lg border bg-white/80 px-3 py-2">
+              Must match: <b>{formatPct(metrics.mustPercent)}</b>
+            </div>
+            <div className="rounded-lg border bg-white/80 px-3 py-2">
+              Nice-to-have: <b>{formatPct(metrics.nicePercent)}</b>
+            </div>
+            <div className="rounded-lg border bg-white/80 px-3 py-2">
+              Gate: <b>{metrics.gatePassed ? "Passed" : "Failed"}</b>
+            </div>
+          </div>
+        )}
       </div>
 
       {Array.isArray(data.breakdown) && (
@@ -52,10 +74,11 @@ export default function ResultDetail() {
                   <th className="p-2">Weight</th>
                   <th className="p-2">Similarity</th>
                   <th className="p-2">Score/10</th>
+                  <th className="p-2 text-start">Evidence</th>
                 </tr>
               </thead>
               <tbody>
-                {data.breakdown.map((r: any, idx: number) => (
+                {(data.breakdown as PerRequirement[]).map((r, idx) => (
                   <tr key={idx} className="border-t">
                     <td className="p-2">{r.requirement}</td>
                     <td className="p-2 text-center">{r.mustHave ? "✓" : ""}</td>
@@ -65,6 +88,9 @@ export default function ResultDetail() {
                     </td>
                     <td className="p-2 text-center">
                       {r.score10?.toFixed?.(2) ?? "-"}
+                    </td>
+                    <td className="p-2 text-xs text-black/60 dark:text-white/70">
+                      {r.bestChunk?.excerpt || "—"}
                     </td>
                   </tr>
                 ))}
