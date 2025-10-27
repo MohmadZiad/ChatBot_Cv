@@ -3,6 +3,7 @@ import { prisma } from "../db/client";
 import { randomUUID } from "node:crypto";
 
 export async function jobsRoute(app: FastifyInstance) {
+  const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
   // POST /api/jobs  — إنشاء وظيفة
   app.post("/", async (req, reply) => {
     try {
@@ -94,7 +95,7 @@ export async function jobsRoute(app: FastifyInstance) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: ANALYSIS_MODEL,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.2,
         }),

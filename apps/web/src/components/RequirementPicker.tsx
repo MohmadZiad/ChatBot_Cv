@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import type { Lang } from "@/lib/i18n";
 
 export type ReqItem = {
   requirement: string;
@@ -132,9 +133,36 @@ const IT_WORDS = [
 
 type Props = {
   onAdd: (item: ReqItem) => void;
+  lang?: Lang;
 };
 
-export default function RequirementPicker({ onAdd }: Props) {
+const LABELS: Record<Lang, { title: string; search: string; must: string; weight: string }> = {
+  ar: {
+    title: "إضافة متطلبات سريعة",
+    search: "ابحث عن مهارة…",
+    must: "أساسي",
+    weight: "وزن",
+  },
+  en: {
+    title: "Quick requirements",
+    search: "Search skills…",
+    must: "Must",
+    weight: "Weight",
+  },
+};
+
+export default function RequirementPicker({ onAdd, lang = "ar" }: Props) {
+  const labels = LABELS[lang] ?? LABELS.ar;
+  const weightOptions = useMemo(
+    () => [
+      { value: 1, label: `${labels.weight} 1` },
+      { value: 2, label: `${labels.weight} 2` },
+      { value: 3, label: `${labels.weight} 3` },
+    ],
+    [labels.weight]
+  );
+  const direction = lang === "ar" ? "rtl" : "ltr";
+  const alignment = lang === "ar" ? "text-right" : "text-left";
   const [q, setQ] = useState("");
   const [must, setMust] = useState(true);
   const [weight, setWeight] = useState(1);
@@ -146,40 +174,47 @@ export default function RequirementPicker({ onAdd }: Props) {
   }, [q]);
 
   return (
-    <div className="rounded-2xl border p-3 bg-white/70 dark:bg-white/5 backdrop-blur">
-      <div className="text-sm font-semibold mb-2">إضافة متطلبات سريعة</div>
-      <div className="flex gap-2 items-center">
+    <div
+      dir={direction}
+      className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/90 p-4 shadow-sm"
+    >
+      <div className="mb-2 text-sm font-semibold text-[var(--foreground)]">
+        {labels.title}
+      </div>
+      <div className="flex items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="ابحث عن مهارة…"
-          className="flex-1 rounded-xl border px-3 py-2 bg-white/70 dark:bg-white/5"
+          placeholder={labels.search}
+          className="flex-1 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
         />
-        <label className="text-xs flex items-center gap-1">
+        <label className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
           <input
             type="checkbox"
             checked={must}
             onChange={(e) => setMust(e.target.checked)}
           />
-          must
+          {labels.must}
         </label>
         <select
           value={weight}
           onChange={(e) => setWeight(Number(e.target.value))}
-          className="rounded-xl border px-2 py-2 bg-white/70 dark:bg-white/5 text-sm"
+          className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-2 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
         >
-          <option value={1}>w1</option>
-          <option value={2}>w2</option>
-          <option value={3}>w3</option>
+          {weightOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2 max-h-48 overflow-auto pr-1">
+      <div className="mt-3 grid max-h-48 grid-cols-2 gap-2 overflow-auto pr-1 text-sm">
         {list.map((w) => (
           <button
             key={w}
             onClick={() => onAdd({ requirement: w, mustHave: must, weight })}
-            className="text-left rounded-lg border px-2 py-1 hover:bg-black/5 dark:hover:bg-white/10"
+            className={`${alignment} rounded-xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 px-2 py-1 text-[var(--color-text-muted)] transition hover:border-[var(--color-primary)]/50 hover:text-[var(--color-primary)]`}
           >
             {w}
           </button>

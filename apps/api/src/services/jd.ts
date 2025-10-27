@@ -22,6 +22,7 @@ JD:
 ${jd}
 `.trim();
 
+  const model = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -29,7 +30,7 @@ ${jd}
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
     }),

@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import clsx from "clsx";
 import {
   Paperclip,
   Send,
@@ -36,6 +37,41 @@ type Msg = {
   role: "bot" | "user" | "sys";
   content: React.ReactNode;
 };
+
+const INTRO_MESSAGE_ID = "m0";
+
+function buildIntroMessage(lang: Lang): Msg {
+  return {
+    id: INTRO_MESSAGE_ID,
+    role: "bot",
+    content: (
+      <div className="space-y-2">
+        <div className="font-semibold text-[var(--color-primary)]">
+          {lang === "ar"
+            ? "مرحباً بك في لوحة التحليل"
+            : "Welcome to the analysis console"}
+        </div>
+        <ul className="list-decimal space-y-1 ps-4 text-xs text-[var(--color-text-muted)]">
+          <li>
+            {lang === "ar"
+              ? "ابدأ بوصف الوظيفة سريعاً."
+              : "Start with a quick job summary."}
+          </li>
+          <li>
+            {lang === "ar"
+              ? "أضف المتطلبات وحدد الأساسي منها."
+              : "Add requirements and highlight must-have items."}
+          </li>
+          <li>
+            {lang === "ar"
+              ? "ارفع السيرة الذاتية واضغط تحليل سريع."
+              : "Upload the CV and run the quick analysis."}
+          </li>
+        </ul>
+      </div>
+    ),
+  };
+}
 
 function getLangFromStorage(): Lang {
   try {
@@ -174,25 +210,21 @@ export default function AIConsole() {
   const lang = useLang();
   const tt = (k: string) => t(lang, k);
 
-  const [messages, setMessages] = React.useState<Msg[]>([
-    {
-      id: "m0",
-      role: "bot",
-      content: (
-        <div>
-          <div className="font-semibold">{tt("chat.title")}</div>
-          <div className="text-sm opacity-80 mt-1">{tt("chat.hello")}</div>
-          <ul className="text-xs opacity-70 mt-2 list-disc ps-5">
-            <li>
-              1) اكتب المتطلبات (سطر لكل متطلب) مع must و/أو وزن (مثال: 2).
-            </li>
-            <li>2) ارفع الـCV (PDF/DOCX).</li>
-            <li>3) اضغط {tt("chat.run")} لعرض النتيجة.</li>
-          </ul>
-        </div>
-      ),
-    },
+  const [messages, setMessages] = React.useState<Msg[]>(() => [
+    buildIntroMessage(lang),
   ]);
+
+  React.useEffect(() => {
+    const intro = buildIntroMessage(lang);
+    setMessages((prev) => {
+      if (!prev.length) return [intro];
+      return prev.map((msg) =>
+        msg.id === INTRO_MESSAGE_ID && msg.role === "bot"
+          ? { ...intro, id: msg.id }
+          : msg
+      );
+    });
+  }, [lang]);
 
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -204,6 +236,88 @@ export default function AIConsole() {
   const [jobInfo, setJobInfo] = React.useState<Job | null>(null);
   const [cvInfo, setCvInfo] = React.useState<UploadCVResponse | null>(null);
   const [fileLabel, setFileLabel] = React.useState<string | null>(null);
+
+  const [activeStep, setActiveStep] = React.useState(1);
+  const maxStep = React.useMemo(() => {
+    if (result) return 4;
+    if (cvInfo || cvFile) return 3;
+    if (reqs.length) return 3;
+    return 2;
+  }, [result, cvInfo, cvFile, reqs.length]);
+  const prevMaxRef = React.useRef(maxStep);
+  React.useEffect(() => {
+    if (maxStep > prevMaxRef.current) {
+      setActiveStep(maxStep);
+    } else if (activeStep > maxStep) {
+      setActiveStep(maxStep);
+    }
+    prevMaxRef.current = maxStep;
+  }, [maxStep, activeStep]);
+  const goToStep = React.useCallback(
+    (step: number) => {
+      if (step <= maxStep) setActiveStep(step);
+    },
+    [maxStep]
+  );
+
+  const steps = React.useMemo(() => {
+    const base = [
+      {
+        id: 1,
+        icon: <Sparkles className="h-4 w-4" />,
+        ar: {
+          title: "١. توصيف الوظيفة",
+          hint: "حدد العنوان والوصف والسيناريو العام للوظيفة.",
+        },
+        en: {
+          title: "1. Job profile",
+          hint: "Capture the job title and a quick role context.",
+        },
+      },
+      {
+        id: 2,
+        icon: <ShieldCheck className="h-4 w-4" />,
+        ar: {
+          title: "٢. المتطلبات",
+          hint: "أدخل المتطلبات وحدد الـ must والوزن لكل عنصر.",
+        },
+        en: {
+          title: "2. Requirements",
+          hint: "Write or pick the requirements with must-have and weight.",
+        },
+      },
+      {
+        id: 3,
+        icon: <Paperclip className="h-4 w-4" />,
+        ar: {
+          title: "٣. رفع السيرة الذاتية",
+          hint: "ارفع CV بصيغة PDF أو DOCX لبدء التحليل.",
+        },
+        en: {
+          title: "3. Upload CV",
+          hint: "Upload the candidate CV to trigger the analysis.",
+        },
+      },
+      {
+        id: 4,
+        icon: <CheckCircle2 className="h-4 w-4" />,
+        ar: {
+          title: "٤. النتائج",
+          hint: "راجع النتيجة التفصيلية والتصدير والمقارنة.",
+        },
+        en: {
+          title: "4. Results",
+          hint: "Review the detailed score and export or compare.",
+        },
+      },
+    ];
+    return base.map((step) => ({
+      id: step.id,
+      icon: step.icon,
+      title: lang === "ar" ? step.ar.title : step.en.title,
+      hint: lang === "ar" ? step.ar.hint : step.en.hint,
+    }));
+  }, [lang]);
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -546,30 +660,34 @@ export default function AIConsole() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="relative overflow-hidden rounded-[32px] border border-[#FFB26B]/60 bg-white/90 shadow-[0_24px_60px_-28px_rgba(255,122,0,0.55)] dark:border-[#FFB26B]/30 dark:bg-[#1F140D]/90">
-        <div className="pointer-events-none absolute -left-28 -top-24 h-72 w-72 rounded-full bg-[#FFEDD8]/70 blur-3xl" />
-        <div className="pointer-events-none absolute -right-24 -bottom-36 h-80 w-80 rounded-full bg-[#FFD7A8]/60 blur-[110px]" />
-
-        <div className="flex flex-col gap-3 border-b border-[#FFE0C2]/70 px-6 pb-4 pt-6 dark:border-[#FFB26B]/20">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-[#FF7A00]">
-            AI Console
+    <div className="space-y-8">
+      <div className="relative overflow-hidden rounded-[36px] border border-[var(--color-border)] bg-[var(--surface)]/95 px-6 py-8 shadow-[0_24px_70px_-32px_rgba(255,122,0,0.38)]">
+        <div className="pointer-events-none absolute -left-24 -top-36 h-64 w-64 rounded-full bg-[var(--color-primary)]/12 blur-3xl" />
+        <div className="pointer-events-none absolute -right-28 bottom-0 h-72 w-72 rounded-full bg-[var(--color-secondary)]/18 blur-[120px]" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-3">
+            <span className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
+              <Sparkles className="h-3.5 w-3.5" />
+              {lang === "ar" ? "منصة التحليل الذكي" : "AI talent workflow"}
+            </span>
+            <h2 className="text-3xl font-semibold text-[var(--foreground)]">
+              {lang === "ar" ? "لوحة تحليل السير الذاتية" : "CV intelligence console"}
+            </h2>
+            <p className="max-w-xl text-sm text-[var(--color-text-muted)]">
+              {lang === "ar"
+                ? "اتبع الخطوات لتوليد متطلبات دقيقة، رفع السير، ثم الحصول على تقرير مطابق جاهز للتصدير."
+                : "Follow the steps to craft requirements, upload CVs and receive an export-ready alignment report."}
+            </p>
           </div>
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-            <div>
-              <h2 className="text-2xl font-semibold text-[#2F3A4A] dark:text-[#FFE7CF]">
-                {t(lang, "app")}
-              </h2>
-              <p className="text-sm text-[#5C6475] dark:text-[#FFE7CF]/70">
-                {lang === "ar"
-                  ? "حمّل وصف الوظيفة والسيرة الذاتية لتحصل على تحليل فوري جاهز للتصدير."
-                  : "Drop the job profile and CV to get instant, export-ready analytics."}
-              </p>
+          <div className="space-y-2 text-xs text-[var(--color-text-muted)]">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[var(--color-secondary)]/10 px-3 py-1 font-medium text-[var(--color-secondary)]">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              gpt-4o-mini + text-embedding-3-small
             </div>
             {result?.id && (
               <button
                 onClick={openDashboard}
-                className="inline-flex items-center gap-2 self-start rounded-full border border-[#FF7A00]/40 bg-white/80 px-4 py-2 text-sm font-semibold text-[#D85E00] shadow-sm transition hover:bg-[#FF7A00]/15 dark:bg-[#2D1A0D] dark:text-[#FFB26B]"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/40 bg-[var(--surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--color-primary)] shadow-sm hover:bg-[var(--color-primary)]/10"
               >
                 <ArrowUpRight className="h-4 w-4" />
                 {tt("chat.viewFull")}
@@ -577,371 +695,462 @@ export default function AIConsole() {
             )}
           </div>
         </div>
+      </div>
 
-        <div
-          ref={listRef}
-          className="space-y-2 max-h-[55vh] overflow-y-auto px-6 py-4"
-          aria-live="polite"
-        >
-          <AnimatePresence initial={false}>
-            {messages.map((m) => (
+      <nav className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 px-4 py-4 shadow-sm">
+        <ol className="grid gap-3 sm:grid-cols-4">
+          {steps.map((step) => {
+            const isActive = step.id === activeStep;
+            const isDone = step.id < activeStep;
+            const locked = step.id > maxStep;
+            return (
+              <li key={step.id}>
+                <button
+                  type="button"
+                  onClick={() => goToStep(step.id)}
+                  disabled={locked}
+                  className={clsx(
+                    "group w-full rounded-2xl border px-4 py-3 text-start transition",
+                    locked
+                      ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--surface)]/60 text-[var(--color-text-muted)]/60"
+                      : isActive
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary)]/12 shadow"
+                        : isDone
+                          ? "border-[var(--color-primary)]/50 bg-[var(--color-primary)]/8"
+                          : "border-[var(--color-border)] bg-[var(--surface)] hover:border-[var(--color-primary)]/60"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={clsx(
+                        "flex size-9 items-center justify-center rounded-full border text-xs font-semibold",
+                        isDone || isActive
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                          : "border-[var(--color-border)] bg-[var(--surface-soft)]/70 text-[var(--color-text-muted)]"
+                      )}
+                    >
+                      {step.id}
+                    </span>
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--foreground)]">{step.title}</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">{step.hint}</div>
+                    </div>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+        <div className="space-y-6">
+          <AnimatePresence mode="wait">
+            {activeStep === 1 && (
               <motion.div
-                key={m.id}
-                initial={{ opacity: 0, y: 6 }}
+                key="step1"
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                className={
-                  m.role === "user"
-                    ? "ms-auto max-w-[85%] rounded-3xl bg-gradient-to-r from-[#FF7A00] to-[#FF8F32] px-4 py-2 text-sm text-white shadow-lg shadow-[#FF8F32]/30"
-                    : m.role === "sys"
-                      ? "mx-auto max-w-[85%] rounded-2xl border border-[#FFB26B]/40 bg-white/80 px-3 py-2 text-xs text-[#C25E00] dark:border-[#FFB26B]/20 dark:bg-[#2D1A0D] dark:text-[#FFB26B]"
-                      : "me-auto max-w-[85%] rounded-3xl border border-[#FFD7A8]/60 bg-white/90 px-4 py-2 text-sm text-[#2F3A4A] shadow-sm dark:border-[#FFB26B]/20 dark:bg-[#27160E] dark:text-[#FFE7CF]"
-                }
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-[28px] border border-[var(--color-border)] bg-[var(--surface)]/95 p-6 shadow-sm space-y-4"
               >
-                {m.content}
+                <div className="space-y-4">
+                  <label className="flex flex-col gap-2 text-sm text-[var(--color-text-muted)]">
+                    {lang === "ar" ? "عنوان الوظيفة" : "Job title"}
+                    <input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={lang === "ar" ? "مثال: مطوّر React متقدم" : "Example: Senior React Engineer"}
+                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm text-[var(--foreground)] focus:border-[var(--color-primary)] focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm text-[var(--color-text-muted)]">
+                    {lang === "ar" ? "وصف مختصر" : "Short summary"}
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={4}
+                      placeholder={lang === "ar" ? "ماذا يفعل الفريق؟ ما أبرز المسؤوليات؟" : "What does the team do? Key responsibilities?"}
+                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm text-[var(--foreground)] focus:border-[var(--color-primary)] focus:outline-none"
+                    />
+                  </label>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => goToStep(2)}
+                    disabled={!title.trim() && !description.trim()}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] via-[#ff8b2e] to-[var(--color-accent)] px-5 py-2 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
+                  >
+                    {lang === "ar" ? "التالي: المتطلبات" : "Next: requirements"}
+                    <ArrowUpRight className="h-4 w-4" />
+                  </button>
+                </div>
               </motion.div>
-            ))}
+            )}
+
+            {activeStep === 2 && (
+              <motion.div
+                key="step2"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-[28px] border border-[var(--color-border)] bg-[var(--surface)]/95 p-6 shadow-sm space-y-5"
+              >
+                <RequirementPicker onAdd={onQuickAdd} lang={lang} />
+                <textarea
+                  value={reqText}
+                  onChange={(e) => setReqText(e.target.value)}
+                  rows={5}
+                  placeholder={
+                    lang === "ar"
+                      ? "اكتب كل متطلب في سطر منفصل، ويمكن إضافة must أو وزن مثل 2"
+                      : "Write each requirement on a new line. Add must or weight like 2"
+                  }
+                  className="w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm text-[var(--foreground)] focus:border-[var(--color-primary)] focus:outline-none"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={onSendReqs}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white shadow"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {lang === "ar" ? "اعتمد المتطلبات" : "Confirm requirements"}
+                  </button>
+                  <button
+                    onClick={() => setReqText("")}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                  >
+                    {lang === "ar" ? "مسح" : "Clear"}
+                  </button>
+                </div>
+                {reqs.length ? (
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {reqs.map((item, idx) => (
+                      <span
+                        key={`${item.requirement}-${idx}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-1 text-[var(--color-text-muted)]"
+                      >
+                        <span className="font-medium text-[var(--foreground)]">{item.requirement}</span>
+                        <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]">
+                          {item.mustHave ? <ShieldCheck className="h-3 w-3 text-[var(--color-primary)]" /> : null}
+                          w{item.weight}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {lang === "ar"
+                      ? "أضف المتطلبات واضغط اعتماد للانتقال لرفع السيرة."
+                      : "Add the requirements and confirm them to move to the upload step."}
+                  </p>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => goToStep(3)}
+                    disabled={!reqs.length}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 bg-[var(--surface)] px-5 py-2 text-sm font-semibold text-[var(--color-primary)] disabled:opacity-40"
+                  >
+                    {lang === "ar" ? "التالي: رفع السيرة" : "Next: upload CV"}
+                    <ArrowUpRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 3 && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-[28px] border border-[var(--color-border)] bg-[var(--surface)]/95 p-6 shadow-sm space-y-5"
+              >
+                <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-4 py-4 text-sm font-medium text-[var(--foreground)]">
+                  <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-[var(--color-primary)]/12 text-[var(--color-primary)]">
+                    <Paperclip className="h-5 w-5" />
+                  </span>
+                  <div className="flex-1">
+                    <div>{lang === "ar" ? "اسحب أو اختر ملف السيرة الذاتية" : "Drag or choose the CV file"}</div>
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {fileLabel
+                        ? fileLabel
+                        : lang === "ar"
+                          ? "يدعم PDF و DOCX بحد أقصى 20 ميغابايت"
+                          : "Supports PDF or DOCX up to 20 MB"}
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={onPickFile}
+                    className="hidden"
+                  />
+                </label>
+
+                {loading && (
+                  <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/8 px-4 py-3">
+                    <div className="relative h-12 w-12">
+                      <div className="absolute inset-0 rounded-full border-2 border-[var(--color-primary)]/40" />
+                      <div className="absolute inset-1 rounded-full border-2 border-dashed border-[var(--color-primary)] animate-spin" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--color-primary)]">
+                        {lang === "ar" ? "جارٍ تحليل السيرة الذاتية..." : "Analyzing the CV..."}
+                      </div>
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        {lang === "ar"
+                          ? "نقارن المتطلبات بالذكاء الدلالي والنتائج ستظهر بعد لحظات."
+                          : "Matching the requirements with semantic embeddings. Results in seconds."}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {cvInfo && (
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/90 px-4 py-3 text-xs text-[var(--color-text-muted)]">
+                    {lang === "ar"
+                      ? `تم الرفع بنجاح • طول النص المستخرج ${cvInfo.textLength ?? 0} حرف`
+                      : `Upload complete • extracted text ${cvInfo.textLength ?? 0} characters`}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-xs text-[var(--color-text-muted)]">
+                    {lang === "ar"
+                      ? "تأكد من اعتماد المتطلبات قبل تشغيل التحليل السريع."
+                      : "Confirm the requirements before running the quick analysis."}
+                  </div>
+                  <button
+                    onClick={run}
+                    disabled={!cvFile || !reqs.length || loading}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] via-[#ff8b2e] to-[var(--color-accent)] px-5 py-2 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {lang === "ar" ? "تحليل سريع" : "Quick analysis"}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {activeStep === 4 && result && (
+              <motion.div
+                key="step4"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="rounded-[28px] border border-[var(--color-border)] bg-[var(--surface)]/95 p-6 shadow-sm space-y-5"
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-[var(--color-primary)]">
+                      {tt("chat.summaryTitle")}
+                    </div>
+                    <h3 className="text-xl font-semibold text-[var(--foreground)]">
+                      {jobInfo?.title || (lang === "ar" ? "تحليل بدون عنوان" : "Untitled analysis")}
+                    </h3>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      {lang === "ar"
+                        ? `ملف: ${fileLabel || "—"}`
+                        : `File: ${fileLabel || "—"}`}
+                    </p>
+                    {cvInfo?.publicUrl && (
+                      <a
+                        href={cvInfo.publicUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--color-secondary)] hover:text-[var(--color-primary)]"
+                      >
+                        <FileText className="h-4 w-4" />
+                        {lang === "ar" ? "افتح السيرة" : "Open CV"}
+                      </a>
+                    )}
+                  </div>
+                  {canExport && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={exportBreakdownAsPdf}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/40 bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                      >
+                        <FileDown className="h-4 w-4" /> {tt("chat.exportPdf")}
+                      </button>
+                      <button
+                        onClick={exportBreakdownAsCsv}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-4 py-2 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        <Download className="h-4 w-4" /> {tt("chat.exportCsv")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
+                  <div className="rounded-2xl bg-[var(--surface-soft)]/70 p-4 text-center">
+                    <ScoreGauge value={Number(result.score || 0)} />
+                    <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                      {lang === "ar" ? "درجة المطابقة" : "Alignment score"}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {metrics && (
+                      <div className="grid gap-2 text-xs text-[var(--color-text-muted)]">
+                        <div className="flex items-center justify-between">
+                          <span>{lang === "ar" ? "متطلبات أساسية" : "Must-have"}</span>
+                          <span className="font-semibold text-[var(--foreground)]">{formatPercent(metrics.mustPercent)}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[var(--surface-soft)]">
+                          <div
+                            className="h-full rounded-full bg-[var(--color-primary)]"
+                            style={{ width: `${Math.min(100, Math.max(0, metrics.mustPercent))}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>{lang === "ar" ? "مهارات إضافية" : "Nice-to-have"}</span>
+                          <span className="font-semibold text-[var(--foreground)]">{formatPercent(metrics.nicePercent)}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[var(--surface-soft)]">
+                          <div
+                            className="h-full rounded-full bg-[var(--color-secondary)]"
+                            style={{ width: `${Math.min(100, Math.max(0, metrics.nicePercent))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {riskMessages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 text-[11px] text-[#b42318]">
+                        {riskMessages.map((msg) => (
+                          <span
+                            key={msg}
+                            className="inline-flex items-center gap-2 rounded-full bg-[#fee4e2] px-3 py-1"
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" /> {msg}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {Array.isArray(result.breakdown) && result.breakdown.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold text-[var(--color-text-muted)]">
+                      {lang === "ar" ? "تفصيل المتطلبات" : "Requirement breakdown"}
+                    </div>
+                    <div className="max-h-64 space-y-2 overflow-auto pr-1 text-xs">
+                      {result.breakdown.map((item, idx) => (
+                        <div
+                          key={`bd-${idx}`}
+                          className="rounded-xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between text-sm font-medium text-[var(--foreground)]">
+                            <span>{item.requirement}</span>
+                            <span className="text-[11px] text-[var(--color-text-muted)]">w{item.weight}</span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                            {lang === "ar" ? "مطابقة" : "Match"}: {(item.similarity * 100).toFixed(1)}% • {lang === "ar" ? "درجة" : "Score"}: {Number(item.score10 || 0).toFixed(1)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
-        <div className="space-y-3 border-t border-[#FFE0C2]/70 px-6 py-5 dark:border-[#FFB26B]/20">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input
-              placeholder={
-                lang === "ar" ? "عنوان الوظيفة" : "Job title"
-              }
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="rounded-2xl border border-[#FFD7A8]/70 bg-white/80 px-3 py-2 text-sm text-[#2F3A4A] shadow-inner dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFE7CF]"
-            />
-            <input
-              placeholder={
-                lang === "ar"
-                  ? "وصف مختصر للوظيفة"
-                  : "Job description"
-              }
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="rounded-2xl border border-[#FFD7A8]/70 bg-white/80 px-3 py-2 text-sm text-[#2F3A4A] shadow-inner dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFE7CF]"
-            />
-          </div>
-
-          <div className="rounded-[28px] border border-[#FFD7A8]/70 bg-[#FFF7F0]/80 p-4 shadow-inner dark:border-[#FFB26B]/30 dark:bg-[#2A180F]">
-            <div className="mb-2 flex items-center justify-between text-xs text-[#5C6475] dark:text-[#FFE7CF]/70">
-              <span>
-                {lang === "ar"
-                  ? "أضف المتطلبات (سطر لكل متطلب، يمكن إضافة must أو وزن)"
-                  : "Add requirements (one per line, you can mark must/weight)"}
+        <aside className="space-y-6">
+          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-[var(--foreground)]">
+                {lang === "ar" ? "مؤشرات التقدم" : "Progress"}
               </span>
+              <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
             </div>
-
-            <div className="mb-3">
-              <RequirementPicker onAdd={onQuickAdd} />
-            </div>
-
-            <textarea
-              value={reqText}
-              onChange={(e) => setReqText(e.target.value)}
-              rows={4}
-              placeholder={
-                lang === "ar"
-                  ? `مثال:\nReact, must, 2\nTypeScript, 1\nTailwind`
-                  : `Example:\nReact, must, 2\nTypeScript, 1\nTailwind`
-              }
-              className="w-full rounded-2xl border border-[#FFD7A8]/70 bg-white/90 px-3 py-3 text-sm text-[#2F3A4A] shadow-inner focus:border-[#FF7A00] focus:outline-none dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFE7CF]"
-            />
-
-            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <label
-                htmlFor="cvfile"
-                className="inline-flex items-center gap-3 text-sm font-medium text-[#2F3A4A] dark:text-[#FFE7CF]"
-              >
-                <span className="size-10 grid place-items-center rounded-2xl bg-gradient-to-br from-[#FF7A00] to-[#FF9B3D] text-white shadow-md">
-                  <Paperclip className="size-4" />
-                </span>
-                <input
-                  id="cvfile"
-                  type="file"
-                  accept=".pdf,.doc,.docx"
-                  onChange={onPickFile}
-                  className="hidden"
-                />
-                <span className="max-w-[220px] truncate">
-                  {fileLabel
-                    ? fileLabel
-                    : lang === "ar"
-                      ? "أرفق CV (PDF / Word)"
-                      : "Attach CV (PDF / Word)"}
-                </span>
-              </label>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={onSendReqs}
-                  className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-white/80 px-4 py-2 text-sm font-semibold text-[#D85E00] transition hover:bg-[#FF7A00]/10 dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFB26B]"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {lang === "ar" ? "أضف المتطلبات" : "Add requirements"}
-                </button>
-                <button
-                  onClick={run}
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF7A00] to-[#FF8F32] px-5 py-2 text-sm font-semibold text-white shadow-lg transition hover:brightness-105 disabled:opacity-40"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  {loading
-                    ? lang === "ar"
-                      ? "جاري التحليل…"
-                      : "Analyzing…"
-                    : tt("chat.run")}
-                </button>
-              </div>
-            </div>
-
-            {cvInfo && (
-              <div className="mt-2 text-[11px] text-[#5C6475] dark:text-[#FFE7CF]/60">
+            {metrics ? (
+              <dl className="mt-3 space-y-2 text-xs text-[var(--color-text-muted)]">
+                <div className="flex items-center justify-between">
+                  <dt>{lang === "ar" ? "متطلبات Must" : "Must coverage"}</dt>
+                  <dd className="font-semibold text-[var(--foreground)]">{formatPercent(metrics.mustPercent)}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt>{lang === "ar" ? "متطلبات إضافية" : "Nice coverage"}</dt>
+                  <dd className="font-semibold text-[var(--foreground)]">{formatPercent(metrics.nicePercent)}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt>{lang === "ar" ? "النقاط المرجحة" : "Weighted score"}</dt>
+                  <dd className="font-semibold text-[var(--foreground)]">{Number(metrics.weightedScore).toFixed(1)}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">
                 {lang === "ar"
-                  ? `طول النص المستخرج: ${cvInfo.textLength ?? 0} حرف • ${cvInfo.parsed ? "جاهز للتحليل" : "نص قليل"}`
-                  : `Extracted text: ${cvInfo.textLength ?? 0} chars • ${cvInfo.parsed ? "Ready" : "Needs clearer source"}`}
-              </div>
+                  ? "أدخل المتطلبات وارفع السيرة لعرض مؤشرات المطابقة."
+                  : "Add requirements and upload a CV to see the alignment metrics."}
+              </p>
             )}
           </div>
-        </div>
-      </div>
 
-      {result && (
-        <section className="rounded-[32px] border border-[#FFB26B]/60 bg-[#FFF7F0]/90 p-6 shadow-[0_18px_50px_-32px_rgba(216,94,0,0.6)] dark:border-[#FFB26B]/30 dark:bg-[#24150F]">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-[#FF7A00]">
-                {tt("chat.summaryTitle")}
-              </div>
-              <h3 className="mt-2 text-xl font-semibold text-[#2F3A4A] dark:text-[#FFE7CF]">
-                {jobInfo?.title || (lang === "ar" ? "تحليل بدون عنوان" : "Untitled analysis")}
-              </h3>
-              <p className="mt-1 text-sm text-[#5C6475] dark:text-[#FFE7CF]/70">
-                {lang === "ar"
-                  ? `ملف: ${fileLabel || "—"} • ${createdAtLabel}`
-                  : `File: ${fileLabel || "—"} • ${createdAtLabel}`}
-              </p>
-              {cvInfo?.publicUrl && (
-                <a
-                  href={cvInfo.publicUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex items-center gap-2 text-xs font-semibold text-[#D85E00] hover:text-[#FF7A00] dark:text-[#FFB26B]"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  {lang === "ar" ? "افتح السيرة الذاتية" : "Open CV"}
-                </a>
+          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-[var(--foreground)]">
+              {lang === "ar" ? "المتطلبات الحالية" : "Current requirements"}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--color-text-muted)]">
+              {reqs.length ? (
+                reqs.map((item, idx) => (
+                  <span
+                    key={`side-req-${idx}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface-soft)]/60 px-3 py-1"
+                  >
+                    <span className="font-medium text-[var(--foreground)]">{item.requirement}</span>
+                    <span>{item.mustHave ? (lang === "ar" ? "أساسي" : "Must") : lang === "ar" ? "اختياري" : "Nice"}</span>
+                  </span>
+                ))
+              ) : (
+                <span>{lang === "ar" ? "أضف المتطلبات من الخطوة الثانية." : "Add requirements in step two."}</span>
               )}
             </div>
-            {canExport && (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={exportBreakdownAsPdf}
-                  className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-white/80 px-4 py-2 text-xs font-semibold text-[#D85E00] shadow-sm transition hover:bg-[#FF7A00]/10 dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFB26B]"
-                >
-                  <FileDown className="h-4 w-4" /> {tt("chat.exportPdf")}
-                </button>
-                <button
-                  onClick={exportBreakdownAsCsv}
-                  className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-white/80 px-4 py-2 text-xs font-semibold text-[#D85E00] shadow-sm transition hover:bg-[#FF7A00]/10 dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFB26B]"
-                >
-                  <Download className="h-4 w-4" /> {tt("chat.exportCsv")}
-                </button>
-              </div>
-            )}
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-[#FFD7A8]/70 bg-white/80 p-4 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D]">
-              <div className="text-xs font-semibold uppercase text-[#D85E00]">
-                Score /10
-              </div>
-              <div className="mt-2 text-3xl font-bold text-[#2F3A4A] dark:text-[#FFE7CF]">
-                {Number(result.score ?? 0).toFixed(2)}
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#FFE0C2]/80 dark:bg-[#3A2215]">
-                <div
-                  className="h-2 rounded-full bg-gradient-to-r from-[#FF7A00] to-[#FF8F32]"
-                  style={{ width: `${Math.min(100, Number(result.score ?? 0) * 10)}%` }}
-                />
-              </div>
+          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-[var(--foreground)]">
+              {lang === "ar" ? "سجل النشاط" : "Activity log"}
             </div>
-
-            <div className="rounded-2xl border border-[#FFD7A8]/70 bg-white/80 p-4 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D]">
-              <div className="text-xs font-semibold uppercase text-[#D85E00]">
-                {tt("chat.mustPercent")}
-              </div>
-              <div className="mt-2 text-3xl font-bold text-[#2F3A4A] dark:text-[#FFE7CF]">
-                {metrics ? formatPercent(metrics.mustPercent) : "—"}
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#FFE0C2]/80 dark:bg-[#3A2215]">
-                <div
-                  className="h-2 rounded-full bg-gradient-to-r from-[#FF7A00] to-[#FFB26B]"
-                  style={{ width: `${metrics ? Math.min(100, metrics.mustPercent) : 0}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-[#FFD7A8]/70 bg-white/80 p-4 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D]">
-              <div className="text-xs font-semibold uppercase text-[#D85E00]">
-                {tt("chat.nicePercent")}
-              </div>
-              <div className="mt-2 text-3xl font-bold text-[#2F3A4A] dark:text-[#FFE7CF]">
-                {metrics ? formatPercent(metrics.nicePercent) : "—"}
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#FFE0C2]/80 dark:bg-[#3A2215]">
-                <div
-                  className="h-2 rounded-full bg-gradient-to-r from-[#FFD7A8] to-[#FF7A00]"
-                  style={{ width: `${metrics ? Math.min(100, metrics.nicePercent) : 0}%` }}
-                />
-              </div>
+            <div
+              ref={listRef}
+              className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1"
+            >
+              <AnimatePresence initial={false}>
+                {messages.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className={clsx(
+                      "rounded-2xl border px-3 py-2 text-xs",
+                      m.role === "user"
+                        ? "border-[var(--color-primary)]/50 bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                        : m.role === "sys"
+                          ? "border-[var(--color-secondary)]/40 bg-[var(--color-secondary)]/10 text-[var(--color-secondary)]"
+                          : "border-[var(--color-border)] bg-[var(--surface-soft)]/70 text-[var(--color-text-muted)]"
+                    )}
+                  >
+                    {m.content}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
-
-          {metrics && (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#FFD7A8]/60 bg-white/80 px-3 py-1 text-xs font-medium text-[#2F3A4A] dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D] dark:text-[#FFE7CF]">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              {tt("chat.gatePassed")}:{" "}
-              <span className="font-semibold">
-                {metrics.gatePassed
-                  ? lang === "ar"
-                    ? "نعم"
-                    : "Yes"
-                  : lang === "ar"
-                    ? "لا"
-                    : "No"}
-              </span>
-            </div>
-          )}
-
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-[#FFD7A8]/70 bg-white/90 p-4 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#D85E00] dark:text-[#FFB26B]">
-                <Sparkles className="h-4 w-4" /> {tt("chat.strengths")}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {metrics?.topStrengths?.length ? (
-                  metrics.topStrengths.map((item) => (
-                    <span
-                      key={item.requirement}
-                      className="rounded-full bg-[#FFFAF2] px-3 py-1 text-xs font-medium text-[#C25E00] shadow-sm dark:bg-[#3A2215] dark:text-[#FFB26B]"
-                    >
-                      {item.requirement} • {item.score.toFixed(1)}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-[#5C6475] dark:text-[#FFE7CF]/70">
-                    {lang === "ar" ? "لا توجد نقاط قوة واضحة بعد." : "No strong matches yet."}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-[#FFD7A8]/70 bg-white/90 p-4 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2D1A0D]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#B34700] dark:text-[#FFB26B]">
-                <AlertTriangle className="h-4 w-4" /> {tt("chat.risks")}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {riskMessages.length ? (
-                  riskMessages.map((msg, idx) => (
-                    <span
-                      key={idx}
-                      className="rounded-full bg-[#FFF0E0] px-3 py-1 text-xs text-[#B34700] dark:bg-[#3A2215] dark:text-[#FFB26B]"
-                    >
-                      {msg}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-xs text-[#5C6475] dark:text-[#FFE7CF]/70">
-                    {lang === "ar" ? "لا توجد تحذيرات." : "No risks detected."}
-                  </span>
-                )}
-              </div>
-
-              {metrics?.missingMust?.length ? (
-                <div className="mt-3">
-                  <div className="text-xs font-semibold text-[#B34700] dark:text-[#FFB26B]">
-                    {tt("chat.missingMust")}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {metrics.missingMust.map((item) => (
-                      <span
-                        key={`miss-${item}`}
-                        className="rounded-full bg-[#FFE0C2] px-2 py-1 text-[11px] text-[#7A2F00] dark:bg-[#3A2215] dark:text-[#FFB26B]"
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {metrics?.improvement?.length ? (
-                <div className="mt-3">
-                  <div className="text-xs font-semibold text-[#B34700] dark:text-[#FFB26B]">
-                    {tt("chat.improvements")}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {metrics.improvement.map((item) => (
-                      <span
-                        key={`imp-${item}`}
-                        className="rounded-full bg-[#FFF5EA] px-2 py-1 text-[11px] text-[#7A2F00] dark:bg-[#3A2215] dark:text-[#FFB26B]"
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {Array.isArray(result.breakdown) && result.breakdown.length > 0 && (
-            <div className="mt-6 overflow-hidden rounded-[24px] border border-[#FFD7A8]/70 bg-white/95 shadow-sm dark:border-[#FFB26B]/30 dark:bg-[#2A180F]">
-              <table className="w-full text-sm text-[#2F3A4A] dark:text-[#FFE7CF]">
-                <thead className="bg-[#FFF0E0] text-xs uppercase text-[#B34700] dark:bg-[#3A2215] dark:text-[#FFB26B]">
-                  <tr>
-                    <th className="px-4 py-3 text-start">{lang === "ar" ? "المتطلب" : "Requirement"}</th>
-                    <th className="px-3 py-3 text-center">Must</th>
-                    <th className="px-3 py-3 text-center">{lang === "ar" ? "الوزن" : "Weight"}</th>
-                    <th className="px-3 py-3 text-center">Sim%</th>
-                    <th className="px-3 py-3 text-center">Score/10</th>
-                    <th className="px-4 py-3 text-start">{lang === "ar" ? "دليل" : "Evidence"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.breakdown.map((r, idx) => (
-                    <tr
-                      key={idx}
-                      className="border-t border-[#FFE0C2]/70 last:border-b-0 dark:border-[#3A2215]"
-                    >
-                      <td className="px-4 py-3 align-top">
-                        <div className="font-medium">{r.requirement}</div>
-                      </td>
-                      <td className="px-3 py-3 text-center align-top">{r.mustHave ? "✓" : "—"}</td>
-                      <td className="px-3 py-3 text-center align-top">{r.weight}</td>
-                      <td className="px-3 py-3 text-center align-top">{(r.similarity * 100).toFixed(1)}%</td>
-                      <td className="px-3 py-3 text-center align-top">{Number(r.score10 ?? 0).toFixed(1)}</td>
-                      <td className="px-4 py-3 text-xs text-[#5C6475] dark:text-[#FFE7CF]/70">
-                        {r.bestChunk?.excerpt ? r.bestChunk.excerpt : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
-
-      <div className="pb-8 text-center text-xs text-[#5C6475] dark:text-[#FFE7CF]/70">
-        Next.js • Tailwind • Prisma • OpenAI
+        </aside>
       </div>
     </div>
   );
