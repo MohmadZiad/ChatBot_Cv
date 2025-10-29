@@ -2,7 +2,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
 import { suggestRequirementsFromDescription } from "../services/requirements.js";
 
 function serializeRequirement(req: any) {
