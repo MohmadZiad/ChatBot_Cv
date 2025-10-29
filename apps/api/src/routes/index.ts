@@ -3,6 +3,7 @@ import { healthRoute } from "./misc.health.js";
 import { jobsRoute } from "./jobs.route.js";
 import { analysesRoute } from "./analyses.route.js";
 import { cvRoute } from "./cv.route.js";
+import { assistantRoute } from "./assistant.route.js";
 
 export function registerRoutes(app: FastifyInstance) {
   // Health check route: GET /api
@@ -16,4 +17,7 @@ export function registerRoutes(app: FastifyInstance) {
 
   // CV routes (upload CVs, list, parse)
   app.register(cvRoute, { prefix: "/api/cv" });
+
+  // Assistant routes (strict AI utilities for JD/CV processing)
+  app.register(assistantRoute, { prefix: "/api/assistant" });
 }

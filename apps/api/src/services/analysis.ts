@@ -1,9 +1,10 @@
 // apps/api/src/services/analysis.ts
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
+import type { Analysis as PrismaAnalysis } from "@prisma/client";
 import { embedTexts, chatJson } from "./openai.js";
 import { cosine } from "./vector.js";
-import { ensureCvEmbeddings } from "./embeddings.js";
+import { ensureCvChunks, ensureCvEmbeddings } from "./embeddings.js";
 
 type HttpError = Error & { status?: number; code?: string };
 const httpError = (
@@ -72,11 +73,13 @@ const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
 const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
 
 export async function runAnalysis(jobId: string, cvId: string) {
+  // تأكد من وجود chunks أساسًا (قد تكون سير قديمة بلا أجزاء)
+  await ensureCvChunks(cvId);
   // تأكيد وجود embeddings للـ CV (وتوليدها إذا ناقصة)
   await ensureCvEmbeddings(cvId);
 
   // قراءة الـ chunks مع تحويل vector -> real[]
-  const chunks = await prisma.$queryRaw<
+  let chunks = await prisma.$queryRaw<
     { id: bigint; section: string; content: string; embedding: number[] }[]
   >`
     SELECT id, section, content, (embedding::real[]) AS embedding
@@ -84,8 +87,22 @@ export async function runAnalysis(jobId: string, cvId: string) {
     WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
     ORDER BY id ASC
   `;
-  if (!chunks.length)
-    throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
+  if (!chunks.length) {
+    // محاولة أخيرة: أعد بناء الأجزاء والمتجهات ثم أعد القراءة
+    await ensureCvChunks(cvId);
+    await ensureCvEmbeddings(cvId);
+    const retry = await prisma.$queryRaw<
+      { id: bigint; section: string; content: string; embedding: number[] }[]
+    >`
+      SELECT id, section, content, (embedding::real[]) AS embedding
+      FROM "CVChunk"
+      WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
+      ORDER BY id ASC
+    `;
+    if (!retry.length)
+      throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
+    chunks = retry;
+  }
 
   // متطلبات الوظيفة
   const reqs = await prisma.jobRequirement.findMany({
@@ -261,6 +278,23 @@ export async function runAnalysis(jobId: string, cvId: string) {
     evidence,
     gaps: gapDetails,
     metrics,
+  };
+}
+
+type AnalysisComputed = Awaited<ReturnType<typeof runAnalysis>>;
+
+function toComputedAnalysis(
+  row: PrismaAnalysis | AnalysisComputed | null
+): AnalysisComputed | null {
+  if (!row) return null;
+  const base = row as any;
+  return {
+    ...row,
+    score: Number(base.score ?? 0),
+    breakdown: Array.isArray(base.breakdown) ? base.breakdown : [],
+    evidence: Array.isArray(base.evidence) ? base.evidence : [],
+    gaps: base.gaps ?? {},
+    metrics: base.metrics ?? {},
   };
 }
 
@@ -485,10 +519,10 @@ export async function improvementSuggestions(
     orderBy: { createdAt: "desc" },
   });
 
-  let analysis = latest;
+  let analysis = toComputedAnalysis(latest);
   if (!analysis) {
     try {
-      analysis = await runAnalysis(jobId, cvId);
+      analysis = toComputedAnalysis(await runAnalysis(jobId, cvId));
     } catch (err: any) {
       if (err?.code === "NO_CV_TEXT" || err?.code === "NO_JOB_REQUIREMENTS") {
         return {
@@ -533,7 +567,8 @@ export async function improvementSuggestions(
     };
   }
 
-  const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
+  const metrics =
+    serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
 
   const missingMust: string[] = metrics?.missingMust || [];
   const improvement: string[] = metrics?.improvement || [];
@@ -580,8 +615,8 @@ export async function improvementSuggestions(
           1
         )}% of must-have requirements.`;
 
-  const breakdownRows = Array.isArray((analysis as any)?.breakdown)
-    ? ((analysis as any).breakdown as any[])
+  const breakdownRows = Array.isArray(analysis.breakdown)
+    ? analysis.breakdown
     : [];
   const lowlights = breakdownRows
     .filter((row) => Number(row?.score10 ?? 0) < 7)
