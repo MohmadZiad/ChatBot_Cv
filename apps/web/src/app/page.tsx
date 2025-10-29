@@ -1,10 +1,11 @@
 // apps/web/src/app/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import AIConsole from "@/components/AIConsole";
 import TalentWorkflow from "@/components/TalentWorkflow";
+import { useLang } from "@/lib/use-lang";
 
 type View = "home" | "workflow";
 
@@ -15,8 +16,31 @@ const fadeSlide = {
   transition: { duration: 0.25 },
 };
 
+const heroCopy = {
+  ar: {
+    badge: "منصة الذكاء الوظيفي",
+    headline: "مساعد توظيف ثنائي اللغة يعتمد على الذكاء الاصطناعي",
+    description:
+      "وحّد رحلة التحليل من توصيف الوظيفة إلى مقارنة السير الذاتية. خطوة بخطوة مع دعم العربية والإنجليزية ونماذج gpt-4o-mini + text-embedding-3-small.",
+    homeButton: "لوحة التحليل الذكية",
+    workflowButton: "رحلة التوظيف",
+    helperHint: "جاهز للمقارنة والتصدير من صفحة النتائج.",
+  },
+  en: {
+    badge: "AI Talent Platform",
+    headline: "A bilingual AI talent assistant powered by intelligence",
+    description:
+      "Unify the hiring journey from job briefs to CV comparisons. Step-by-step with Arabic and English support and gpt-4o-mini + text-embedding-3-small.",
+    homeButton: "AI intelligence console",
+    workflowButton: "Talent workflow",
+    helperHint: "Ready to compare and export from the results page.",
+  },
+} as const;
+
 export default function HomePage() {
   const [view, setView] = useState<View>("home");
+  const lang = useLang();
+  const copy = heroCopy[lang];
 
   // احترم الهاش: #workflow أو #home
   useEffect(() => {
@@ -45,13 +69,13 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(320px_220px_at_20%_20%,rgba(255,122,0,0.18),transparent_60%),radial-gradient(360px_260px_at_80%_-10%,rgba(74,144,226,0.16),transparent_65%)]" />
         <div className="relative space-y-3">
           <span className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-primary)]/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-[var(--color-primary)]">
-            AI Talent Platform
+            {copy.badge}
           </span>
           <h1 className="text-3xl font-semibold text-[var(--foreground)] sm:text-4xl">
-            {"مساعد توظيف ثنائي اللغة يعتمد على الذكاء الاصطناعي"}
+            {copy.headline}
           </h1>
           <p className="mx-auto max-w-2xl text-sm text-[var(--color-text-muted)] sm:text-base">
-            {"وحّد رحلة التحليل من توصيف الوظيفة إلى مقارنة السير الذاتية. خطوة بخطوة مع دعم العربية والإنجليزية ونماذج gpt-4o-mini + text-embedding-3-small."}
+            {copy.description}
           </p>
         </div>
       </header>
@@ -65,7 +89,7 @@ export default function HomePage() {
               : "border border-[var(--color-primary)]/40 bg-[var(--surface)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
           }`}
         >
-          لوحة التحليل الذكية
+          {copy.homeButton}
         </button>
         <button
           onClick={() => go("workflow")}
@@ -75,7 +99,7 @@ export default function HomePage() {
               : "border border-[var(--color-primary)]/40 bg-[var(--surface)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
           }`}
         >
-          Talent Workflow
+          {copy.workflowButton}
         </button>
       </div>
 
@@ -84,8 +108,8 @@ export default function HomePage() {
         {!isWorkflow ? (
           <motion.div key="home" {...fadeSlide}>
             <AIConsole />
-            <div className="text-xs opacity-60 text-center mt-3">
-              جاهز للمقارنة والتصدير من صفحة النتائج.
+            <div className="mt-3 text-center text-xs opacity-60">
+              {copy.helperHint}
             </div>
           </motion.div>
         ) : (
