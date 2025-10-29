@@ -1824,7 +1824,8 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    {getOptionLabel(option, lang)}
+
+                    getOptionLabel(option, lang)
                   </button>
                 ))}
               </div>
