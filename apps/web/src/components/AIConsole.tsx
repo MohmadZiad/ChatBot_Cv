@@ -23,6 +23,16 @@ import { http } from "../services/http";
 import { cvApi, type UploadCVResponse } from "@/services/api/cv";
 import { jobsApi, type JobRequirement, type Job } from "@/services/api/jobs";
 import {
+  assistantApi,
+  type CandidateHelper,
+  type ExperienceExtract,
+  type ExtractedJobFields as AssistantExtractedJobFields,
+  type LanguagesExtract,
+  type RequirementsTemplate,
+  type SuggestedRequirements,
+  type TitleSummary,
+} from "@/services/api/assistant";
+import {
   analysesApi, // نستخدمه لجلب الـanalysis والـpickBest
   type Analysis,
   type AnalysisMetrics,
@@ -337,6 +347,17 @@ export default function AIConsole() {
   const [jobInfo, setJobInfo] = React.useState<Job | null>(null);
   const [cvInfo, setCvInfo] = React.useState<UploadCVResponse | null>(null);
   const [fileLabel, setFileLabel] = React.useState<string | null>(null);
+  const [assistantLoading, setAssistantLoading] = React.useState<string | null>(null);
+  const [assistantError, setAssistantError] = React.useState<string | null>(null);
+  const [assistantFields, setAssistantFields] = React.useState<AssistantExtractedJobFields | null>(null);
+  const [assistantTitleSummary, setAssistantTitleSummary] = React.useState<TitleSummary | null>(null);
+  const [assistantQuickPoints, setAssistantQuickPoints] = React.useState<string[]>([]);
+  const [assistantLanguages, setAssistantLanguages] = React.useState<LanguagesExtract | null>(null);
+  const [assistantExperience, setAssistantExperience] = React.useState<ExperienceExtract | null>(null);
+  const [assistantSuggested, setAssistantSuggested] = React.useState<SuggestedRequirements | null>(null);
+  const [assistantTemplate, setAssistantTemplate] = React.useState<RequirementsTemplate | null>(null);
+  const [candidateProfile, setCandidateProfile] = React.useState("");
+  const [candidateHelperResult, setCandidateHelperResult] = React.useState<CandidateHelper | null>(null);
 
   const [activeStep, setActiveStep] = React.useState(1);
   const maxStep = React.useMemo(() => {
@@ -402,6 +423,49 @@ export default function AIConsole() {
     [maxStep]
   );
 
+  const jobDescriptionForAssistant = React.useMemo(() => {
+    const parts: string[] = [];
+    if (title.trim()) parts.push(title.trim());
+    if (description.trim()) parts.push(description.trim());
+    return parts.join("\n\n");
+  }, [title, description]);
+
+  const parseAssistantLines = React.useCallback((text: string) => {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^[\s•\-–\d.]+/, "").trim())
+      .filter(Boolean);
+  }, []);
+
+  const runAssistant = React.useCallback(
+    async (
+      label: string,
+      executor: () => Promise<void>,
+      options: { requireDescription?: boolean } = {}
+    ) => {
+      const requireDescription =
+        options.requireDescription === undefined ? true : options.requireDescription;
+      if (requireDescription && !jobDescriptionForAssistant.trim()) {
+        setAssistantError(
+          lang === "ar"
+            ? "أدخل وصف الوظيفة أولاً."
+            : "Provide the job description first."
+        );
+        return;
+      }
+      setAssistantLoading(label);
+      setAssistantError(null);
+      try {
+        await executor();
+      } catch (err: any) {
+        setAssistantError(err?.message || "assistant failed");
+      } finally {
+        setAssistantLoading(null);
+      }
+    },
+    [jobDescriptionForAssistant, lang]
+  );
+
   const steps = React.useMemo(() => {
     const base = [
       {
@@ -460,6 +524,189 @@ export default function AIConsole() {
       hint: lang === "ar" ? step.ar.hint : step.en.hint,
     }));
   }, [lang]);
+
+  const handleAssistantExtract = React.useCallback(() => {
+    runAssistant("extract", async () => {
+      const res = await assistantApi.extractFields(jobDescriptionForAssistant);
+      setAssistantFields(res);
+      setAssistantLanguages({
+        languages: Array.isArray(res.languages) ? res.languages : [],
+        proficiency_if_stated: {},
+      });
+      setAssistantExperience({
+        required_experience_years: res.required_experience_years ?? "",
+        experience_detail: res.notes ?? "",
+      });
+      if (Array.isArray(res.must_have) || Array.isArray(res.nice_to_have)) {
+        setAssistantSuggested({
+          must_have: (res.must_have || []).map((skill) => ({
+            skill,
+            weight: 2,
+          })),
+          nice_to_have: (res.nice_to_have || []).map((skill) => ({
+            skill,
+            weight: 1,
+          })),
+        });
+      }
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const handleAssistantTitle = React.useCallback(() => {
+    runAssistant("title", async () => {
+      const res = await assistantApi.titleSummary(jobDescriptionForAssistant);
+      setAssistantTitleSummary(res);
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const handleAssistantQuickSummary = React.useCallback(() => {
+    runAssistant("quick", async () => {
+      const res = await assistantApi.quickSuggestions("ملخص", jobDescriptionForAssistant);
+      setAssistantQuickPoints(parseAssistantLines(res.output).slice(0, 6));
+    });
+  }, [jobDescriptionForAssistant, parseAssistantLines, runAssistant]);
+
+  const handleAssistantLanguages = React.useCallback(() => {
+    runAssistant("languages", async () => {
+      const res = await assistantApi.languages(jobDescriptionForAssistant);
+      setAssistantLanguages(res);
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const handleAssistantExperience = React.useCallback(() => {
+    runAssistant("experience", async () => {
+      const res = await assistantApi.experience(jobDescriptionForAssistant);
+      setAssistantExperience(res);
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const handleAssistantRequirements = React.useCallback(() => {
+    runAssistant("requirements", async () => {
+      const res = await assistantApi.suggestRequirements(jobDescriptionForAssistant);
+      setAssistantSuggested(res);
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const handleAssistantTemplate = React.useCallback(() => {
+    runAssistant("template", async () => {
+      const res = await assistantApi.requirementsTemplate(jobDescriptionForAssistant);
+      setAssistantTemplate(res);
+    });
+  }, [jobDescriptionForAssistant, runAssistant]);
+
+  const applySuggestedRequirements = React.useCallback(() => {
+    if (!assistantSuggested) return;
+    const list: JobRequirement[] = [];
+    const ensureWeight = (value: number | undefined, fallback: number) => {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num <= 0) return fallback;
+      return Math.max(1, Math.min(3, num));
+    };
+    assistantSuggested.must_have?.forEach((item) => {
+      if (!item?.skill) return;
+      list.push({
+        requirement: item.skill,
+        mustHave: true,
+        weight: ensureWeight(item.weight, 2),
+      });
+    });
+    assistantSuggested.nice_to_have?.forEach((item) => {
+      if (!item?.skill) return;
+      list.push({
+        requirement: item.skill,
+        mustHave: false,
+        weight: ensureWeight(item.weight, 1),
+      });
+    });
+    if (!list.length) return;
+    setReqs(list);
+    setReqText(
+      list
+        .map((item) => `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`)
+        .join("\n")
+    );
+    push({
+      role: "bot",
+      content: (
+        <div className="text-sm text-[var(--color-text-muted)]">
+          {lang === "ar"
+            ? "تم إدراج المتطلبات المقترحة. راجعها ثم اعتمدها."
+            : "Suggested requirements added. Review and confirm."}
+        </div>
+      ),
+    });
+    setActiveStep((prev) => Math.max(prev, 2));
+  }, [assistantSuggested, lang, push]);
+
+  const handleCandidateHelper = React.useCallback(() => {
+    if (!candidateProfile.trim()) {
+      setAssistantError(
+        lang === "ar" ? "أدخل وصف المرشح أولاً." : "Provide the candidate profile first."
+      );
+      return;
+    }
+    runAssistant("candidate", async () => {
+      const res = await assistantApi.candidateHelper(
+        candidateProfile,
+        jobDescriptionForAssistant
+      );
+      setCandidateHelperResult(res);
+    });
+  }, [candidateProfile, jobDescriptionForAssistant, lang, runAssistant]);
+
+  const assistantLanguagesList =
+    assistantLanguages?.languages?.length
+      ? assistantLanguages.languages
+      : assistantFields?.languages ?? [];
+  const assistantExperienceText =
+    assistantExperience?.required_experience_years?.trim() ||
+    assistantFields?.required_experience_years?.trim() ||
+    "";
+  const assistantExperienceDetail =
+    assistantExperience?.experience_detail?.trim() ||
+    assistantFields?.notes?.trim() ||
+    "";
+  const assistantLoadingText = React.useMemo(() => {
+    if (!assistantLoading) return "";
+    const copy: Record<string, { ar: string; en: string }> = {
+      extract: {
+        ar: "جارٍ استخراج تفاصيل الوظيفة...",
+        en: "Extracting job details...",
+      },
+      title: {
+        ar: "جارٍ اقتراح عنوان ووصف...",
+        en: "Generating title and summary...",
+      },
+      quick: {
+        ar: "جارٍ توليد النقاط...",
+        en: "Generating quick highlights...",
+      },
+      languages: {
+        ar: "جارٍ تحليل اللغات...",
+        en: "Detecting languages...",
+      },
+      experience: {
+        ar: "جارٍ استخراج الخبرة...",
+        en: "Extracting experience...",
+      },
+      requirements: {
+        ar: "جارٍ اقتراح المتطلبات...",
+        en: "Suggesting requirements...",
+      },
+      template: {
+        ar: "جارٍ تجهيز نموذج المتطلبات...",
+        en: "Building quick template...",
+      },
+      candidate: {
+        ar: "جارٍ مطابقة المرشح...",
+        en: "Evaluating candidate fit...",
+      },
+    };
+    const entry = copy[assistantLoading];
+    if (!entry) return lang === "ar" ? "جارٍ استخدام المساعد..." : "Running assistant...";
+    return lang === "ar" ? entry.ar : entry.en;
+  }, [assistantLoading, lang]);
+  const hasJobDescription = jobDescriptionForAssistant.trim().length > 0;
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
@@ -1040,6 +1287,292 @@ export default function AIConsole() {
                     />
                   </label>
 
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-4 text-xs text-[var(--color-text-muted)]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--foreground)]">
+                      <div className="inline-flex items-center gap-2 font-semibold">
+                        <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
+                        {lang === "ar" ? "مساعد الذكاء للوصف" : "AI helper for the job brief"}
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={handleAssistantExtract}
+                          disabled={!hasJobDescription || assistantLoading === "extract"}
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 font-semibold text-[var(--color-primary)] disabled:opacity-50"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          {lang === "ar" ? "تحليل كامل" : "Full extract"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAssistantTitle}
+                          disabled={!hasJobDescription || assistantLoading === "title"}
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                        >
+                          {lang === "ar" ? "عنوان ووصف" : "Title & summary"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAssistantQuickSummary}
+                          disabled={!hasJobDescription || assistantLoading === "quick"}
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                        >
+                          {lang === "ar" ? "ملخص سريع" : "Quick highlights"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={handleAssistantLanguages}
+                        disabled={!hasJobDescription || assistantLoading === "languages"}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        {lang === "ar" ? "اللغات المطلوبة" : "Languages"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAssistantExperience}
+                        disabled={!hasJobDescription || assistantLoading === "experience"}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        {lang === "ar" ? "الخبرة المطلوبة" : "Experience"}
+                      </button>
+                    </div>
+                    {assistantError ? (
+                      <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                        {assistantError}
+                      </div>
+                    ) : null}
+                    {assistantLoading ? (
+                      <div className="mt-3 inline-flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        {assistantLoadingText ||
+                          (lang === "ar"
+                            ? "جارٍ استخدام المساعد..."
+                            : "Running assistant...")}
+                      </div>
+                    ) : null}
+
+                    {assistantFields ? (
+                      <div className="mt-4 grid gap-3">
+                        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[var(--color-text-muted)]">
+                              {lang === "ar" ? "ملخص مستخرج" : "Extracted snapshot"}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {assistantFields.title ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setTitle(assistantFields.title)}
+                                  className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                                >
+                                  {lang === "ar" ? "استخدام العنوان" : "Use title"}
+                                </button>
+                              ) : null}
+                              {assistantFields.summary ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setDescription(assistantFields.summary)}
+                                  className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                                >
+                                  {lang === "ar" ? "استخدام الملخص" : "Use summary"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-2 space-y-2 text-[11px]">
+                            {assistantFields.title ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "العنوان:" : "Title:"}
+                                </span>{" "}
+                                {assistantFields.title}
+                              </div>
+                            ) : null}
+                            {assistantFields.summary ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "الملخص:" : "Summary:"}
+                                </span>{" "}
+                                {assistantFields.summary}
+                              </div>
+                            ) : null}
+                            {assistantFields.level ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "المستوى:" : "Level:"}
+                                </span>{" "}
+                                {assistantFields.level}
+                              </div>
+                            ) : null}
+                            {assistantFields.contract_types?.length ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "أنواع العقد:" : "Contract:"}
+                                </span>{" "}
+                                {assistantFields.contract_types.join(" • ")}
+                              </div>
+                            ) : null}
+                            {assistantFields.location ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "الموقع:" : "Location:"}
+                                </span>{" "}
+                                {assistantFields.location}
+                              </div>
+                            ) : null}
+                            {assistantFields.notes ? (
+                              <div>
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === "ar" ? "ملاحظات:" : "Notes:"}
+                                </span>{" "}
+                                {assistantFields.notes}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                            <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                              {lang === "ar" ? "الخبرة" : "Experience"}
+                            </div>
+                            <div className="mt-2 text-[var(--foreground)]">
+                              {assistantExperienceText
+                                ? assistantExperienceText
+                                : lang === "ar"
+                                  ? "لم تُحدَّد خبرة صريحة."
+                                  : "No explicit experience found."}
+                            </div>
+                            {assistantExperienceDetail ? (
+                              <div className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                                {assistantExperienceDetail}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                            <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                              {lang === "ar" ? "اللغات" : "Languages"}
+                            </div>
+                            {assistantLanguagesList.length ? (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {assistantLanguagesList.map((item) => (
+                                  <span
+                                    key={item}
+                                    className="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-[11px] font-semibold text-[var(--color-primary)]"
+                                  >
+                                    {item}
+                                    {assistantLanguages?.proficiency_if_stated?.[item] ? (
+                                      <span className="ms-1 text-[10px] text-[var(--color-text-muted)]">
+                                        {assistantLanguages.proficiency_if_stated[item]}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+                                {lang === "ar" ? "لا توجد لغات محددة." : "No languages detected."}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {(assistantFields.must_have?.length || assistantFields.nice_to_have?.length) ? (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {assistantFields.must_have?.length ? (
+                              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                                <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                                  {lang === "ar" ? "متطلبات أساسية" : "Must-have"}
+                                </div>
+                                <ul className="mt-2 space-y-1 text-[11px]">
+                                  {assistantFields.must_have.map((item) => (
+                                    <li key={`must-${item}`}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {assistantFields.nice_to_have?.length ? (
+                              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                                <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                                  {lang === "ar" ? "مهارات إضافية" : "Nice-to-have"}
+                                </div>
+                                <ul className="mt-2 space-y-1 text-[11px]">
+                                  {assistantFields.nice_to_have.map((item) => (
+                                    <li key={`nice-${item}`}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {assistantTitleSummary ? (
+                      <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                            {lang === "ar" ? "عنوان مقترح" : "Suggested title & summary"}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {assistantTitleSummary.title ? (
+                              <button
+                                type="button"
+                                onClick={() => setTitle(assistantTitleSummary.title)}
+                                className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                              >
+                                {lang === "ar" ? "اعتماد العنوان" : "Use title"}
+                              </button>
+                            ) : null}
+                            {assistantTitleSummary.summary ? (
+                              <button
+                                type="button"
+                                onClick={() => setDescription(assistantTitleSummary.summary)}
+                                className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                              >
+                                {lang === "ar" ? "اعتماد الوصف" : "Use summary"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="mt-2 space-y-2 text-[11px]">
+                          {assistantTitleSummary.title ? (
+                            <div>
+                              <span className="font-semibold text-[var(--foreground)]">
+                                {lang === "ar" ? "العنوان:" : "Title:"}
+                              </span>{" "}
+                              {assistantTitleSummary.title}
+                            </div>
+                          ) : null}
+                          {assistantTitleSummary.summary ? (
+                            <div>
+                              <span className="font-semibold text-[var(--foreground)]">
+                                {lang === "ar" ? "الوصف:" : "Summary:"}
+                              </span>{" "}
+                              {assistantTitleSummary.summary}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {assistantQuickPoints.length ? (
+                      <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                          {lang === "ar" ? "نِقاط سريعة" : "Quick points"}
+                        </div>
+                        <ul className="mt-2 list-disc space-y-1 ps-5 text-[11px] text-[var(--color-text-muted)]">
+                          {assistantQuickPoints.map((item, idx) => (
+                            <li key={`quick-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+
                   {/* زر توليد المتطلبات من الوصف */}
                   <div className="flex items-center justify-between">
                     <div className="text-xs text-[var(--color-text-muted)]">
@@ -1119,6 +1652,208 @@ export default function AIConsole() {
                 transition={{ duration: 0.25 }}
                 className="rounded-[28px] border border-[var(--color-border)] bg-[var(--surface)]/95 p-6 shadow-sm space-y-5"
               >
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-4 text-xs text-[var(--color-text-muted)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--foreground)]">
+                    <div className="inline-flex items-center gap-2 font-semibold">
+                      <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
+                      {lang === "ar" ? "ذكاء المتطلبات" : "AI requirements helper"}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={handleAssistantRequirements}
+                        disabled={!hasJobDescription || assistantLoading === "requirements"}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 font-semibold text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {lang === "ar" ? "اقترح متطلبات" : "Suggest requirements"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={applySuggestedRequirements}
+                        disabled={!assistantSuggested}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        {lang === "ar" ? "تطبيق المقترحات" : "Apply set"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAssistantTemplate}
+                        disabled={!hasJobDescription || assistantLoading === "template"}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        {lang === "ar" ? "نموذج سريع" : "Quick template"}
+                      </button>
+                    </div>
+                  </div>
+                  {assistantError ? (
+                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                      {assistantError}
+                    </div>
+                  ) : null}
+                  {assistantLoading && (assistantLoading === "requirements" || assistantLoading === "template") ? (
+                    <div className="mt-3 inline-flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> {assistantLoadingText}
+                    </div>
+                  ) : null}
+                  {assistantSuggested ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                          {lang === "ar" ? "متطلبات أساسية" : "Must-have"}
+                        </div>
+                        {assistantSuggested.must_have?.length ? (
+                          <ul className="mt-2 space-y-1 text-[11px]">
+                            {assistantSuggested.must_have.map((item, idx) => (
+                              <li key={`ai-must-${idx}`}>
+                                {item.skill}
+                                {item.weight ? ` • w${item.weight}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+                            {lang === "ar" ? "لا يوجد." : "None."}
+                          </div>
+                        )}
+                      </div>
+                      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                          {lang === "ar" ? "مهارات إضافية" : "Nice-to-have"}
+                        </div>
+                        {assistantSuggested.nice_to_have?.length ? (
+                          <ul className="mt-2 space-y-1 text-[11px]">
+                            {assistantSuggested.nice_to_have.map((item, idx) => (
+                              <li key={`ai-nice-${idx}`}>
+                                {item.skill}
+                                {item.weight ? ` • w${item.weight}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+                            {lang === "ar" ? "لا يوجد." : "None."}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {assistantTemplate ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                          {lang === "ar" ? "اقتراحات العمود الأيسر" : "Left column"}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {assistantTemplate.left_column.map((item) => (
+                            <button
+                              key={`tpl-left-${item}`}
+                              type="button"
+                              onClick={() => onQuickAdd({ requirement: item, mustHave: true, weight: 2 })}
+                              className="rounded-full border border-[var(--color-primary)]/50 bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold text-[var(--color-primary)]"
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
+                          {lang === "ar" ? "اقتراحات العمود الأيمن" : "Right column"}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {assistantTemplate.right_column.map((item) => (
+                            <button
+                              key={`tpl-right-${item}`}
+                              type="button"
+                              onClick={() => onQuickAdd({ requirement: item, mustHave: false, weight: 1 })}
+                              className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
+                    <label className="flex flex-col gap-2 text-[11px] text-[var(--color-text-muted)]">
+                      {lang === "ar"
+                        ? "وصف المرشح (مثال: مطور، خبرة سنة، يتعلم أونلاين)"
+                        : "Candidate profile (e.g. frontend dev, 1 year, learning online)"}
+                      <textarea
+                        value={candidateProfile}
+                        onChange={(e) => setCandidateProfile(e.target.value)}
+                        rows={3}
+                        placeholder={
+                          lang === "ar"
+                            ? "اكتب وصفًا مختصرًا للشخص ليقارن مع الوظيفة"
+                            : "Add a short candidate blurb to compare"
+                        }
+                        className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--color-primary)] focus:outline-none"
+                      />
+                    </label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCandidateHelper}
+                        disabled={!hasJobDescription || assistantLoading === "candidate"}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 text-[11px] font-semibold text-[var(--color-primary)] disabled:opacity-50"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        {lang === "ar" ? "مساعد الشخص" : "Candidate helper"}
+                      </button>
+                    </div>
+                    {candidateHelperResult ? (
+                      <div className="mt-3 grid gap-3 text-[11px] text-[var(--color-text-muted)]">
+                        {candidateHelperResult.fit_notes ? (
+                          <div>
+                            <span className="font-semibold text-[var(--foreground)]">
+                              {lang === "ar" ? "مطابقة:" : "Fit:"}
+                            </span>{" "}
+                            {candidateHelperResult.fit_notes}
+                          </div>
+                        ) : null}
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div>
+                            <div className="font-semibold text-[var(--color-text-muted)]">
+                              {lang === "ar" ? "الفجوات" : "Gaps"}
+                            </div>
+                            {candidateHelperResult.gaps?.length ? (
+                              <ul className="mt-1 space-y-1 ps-4">
+                                {candidateHelperResult.gaps.map((item, idx) => (
+                                  <li key={`gap-${idx}`}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="mt-1 text-[var(--color-text-muted)]">
+                                {lang === "ar" ? "لا شيء صريح." : "No explicit gaps."}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[var(--color-text-muted)]">
+                              {lang === "ar" ? "اقتراحات تعلم" : "Learning tips"}
+                            </div>
+                            {candidateHelperResult.learning_suggestions?.length ? (
+                              <ul className="mt-1 space-y-1 ps-4">
+                                {candidateHelperResult.learning_suggestions.map((item, idx) => (
+                                  <li key={`learn-${idx}`}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="mt-1 text-[var(--color-text-muted)]">
+                                {lang === "ar" ? "لا اقتراحات." : "No suggestions."}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
                 <RequirementPicker onAdd={onQuickAdd} lang={lang} />
                 <textarea
                   value={reqText}
