@@ -27,6 +27,7 @@ import { cvApi } from "@/services/api/cv";
 import { jobsApi, type JobRequirement } from "@/services/api/jobs";
 import { analysesApi, type Analysis } from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
+import { useLang } from "@/lib/use-lang";
 
 type UploadStatus =
   | "pending"
@@ -115,6 +116,9 @@ type ExperienceBand = {
 
 type Option = { id: string; label: { ar: string; en: string } };
 type SkillSuggestion = { id: string; label: string };
+
+const getOptionLabel = (option: Option, lang: Lang) =>
+  option.label?.[lang] ?? option.label?.ar ?? option.label?.en ?? option.id;
 
 const experienceBands: ExperienceBand[] = [
   { id: "0-1", label: { ar: "0 - 1 سنة", en: "0-1 years" }, min: 0, max: 1 },
@@ -519,40 +523,6 @@ function fmt(
     out = out.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
   }
   return out;
-}
-
-function useLang(): Lang {
-  const [lang, setLang] = React.useState<Lang>("ar");
-
-  React.useEffect(() => {
-    const readLang = () => {
-      try {
-        return (window.localStorage.getItem("lang") as Lang) || "ar";
-      } catch {
-        return "ar";
-      }
-    };
-
-    setLang(readLang());
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === "lang") setLang(readLang());
-    };
-
-    const onCustom = (event: Event) => {
-      const detail = (event as CustomEvent<Lang>).detail;
-      if (detail) setLang(detail);
-    };
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("lang-change", onCustom as EventListener);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("lang-change", onCustom as EventListener);
-    };
-  }, []);
-
-  return lang;
 }
 
 function detectLanguages(text: string): string[] {
@@ -1769,7 +1739,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    getOptionLabel(option, lang)
                   </button>
                 ))}
               </div>
@@ -1794,7 +1764,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    getOptionLabel(option, lang)
                   </button>
                 ))}
               </div>
@@ -1819,7 +1789,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    getOptionLabel(option, lang)
                   </button>
                 ))}
               </div>
@@ -1840,7 +1810,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    getOptionLabel(option, lang)
                   </button>
                 ))}
               </div>
