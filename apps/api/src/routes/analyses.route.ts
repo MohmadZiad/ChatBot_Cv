@@ -161,7 +161,9 @@ export async function analysesRoute(app: FastifyInstance) {
     try {
       const { cvIds = [] } = (await req.body) as any;
       const res = await compareCvEmbeddings(Array.isArray(cvIds) ? cvIds : []);
-      return { ok: true, ...res };
+      const payload: Record<string, any> = { ...res };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "compare embeddings failed");
       const status = err?.status ?? 400;
@@ -181,7 +183,9 @@ export async function analysesRoute(app: FastifyInstance) {
         Array.isArray(cvIds) ? cvIds : [],
         Number(top) || 3
       );
-      return { ok: true, ...res };
+      const payload: Record<string, any> = { ...res };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "pick best failed");
       const status = err?.status ?? 400;
@@ -201,7 +205,9 @@ export async function analysesRoute(app: FastifyInstance) {
         cvId,
         lang === "en" ? "en" : "ar"
       );
-      return { ok: true, ...response };
+      const payload: Record<string, any> = { ...response };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "improve suggestions failed");
       const status = err?.status ?? 400;
