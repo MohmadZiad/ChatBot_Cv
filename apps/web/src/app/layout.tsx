@@ -49,7 +49,7 @@ export default function RootLayout({
       </head>
 
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh bg-[#FFF6EF] text-foreground dark:bg-[#1B120A]`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh text-foreground`}
       >
         <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
           <div className="absolute -top-32 -end-32 h-[420px] w-[420px] rounded-full bg-[#FFB26B]/40 blur-3xl" />

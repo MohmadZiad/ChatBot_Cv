@@ -2,6 +2,7 @@
 
 /* Light/Dark colors via CSS vars */
 :root {
+  color-scheme: light;
   --background: #f8f9fc;
   --foreground: #222222;
   --surface: #ffffff;
@@ -17,23 +18,23 @@
     radial-gradient(circle at 80% 0%, rgba(74, 144, 226, 0.12), transparent 60%),
     linear-gradient(180deg, #f8f9fc 0%, #ffffff 55%, #f1f6ff 100%);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #121418;
-    --foreground: #f6f7fb;
-    --surface: #1b1f26;
-    --surface-soft: #1f2530;
-    --surface-muted: #202633;
-    --color-primary: #ff9f4a;
-    --color-primary-soft: #ffba73;
-    --color-secondary: #77b3ff;
-    --color-accent: #c89cff;
-    --color-border: #2f3642;
-    --color-text-muted: #b0b9c9;
-    --body-gradient: radial-gradient(circle at 20% 10%, rgba(255, 161, 70, 0.18), transparent 55%),
-      radial-gradient(circle at 80% 0%, rgba(119, 179, 255, 0.15), transparent 60%),
-      linear-gradient(180deg, #141821 0%, #0d1016 55%, #111621 100%);
-  }
+
+html.dark {
+  color-scheme: dark;
+  --background: #121418;
+  --foreground: #f6f7fb;
+  --surface: #1b1f26;
+  --surface-soft: #1f2530;
+  --surface-muted: #202633;
+  --color-primary: #ff9f4a;
+  --color-primary-soft: #ffba73;
+  --color-secondary: #77b3ff;
+  --color-accent: #c89cff;
+  --color-border: #2f3642;
+  --color-text-muted: #b0b9c9;
+  --body-gradient: radial-gradient(circle at 20% 10%, rgba(255, 161, 70, 0.18), transparent 55%),
+    radial-gradient(circle at 80% 0%, rgba(119, 179, 255, 0.15), transparent 60%),
+    linear-gradient(180deg, #141821 0%, #0d1016 55%, #111621 100%);
 }
 
 @theme inline {
