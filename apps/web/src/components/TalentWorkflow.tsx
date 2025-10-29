@@ -320,6 +320,8 @@ const COPY = {
       error: "حدث خطأ: {message}",
       limitReached: "تم الوصول إلى الحد الأقصى (50 ملف).",
       addedFiles: "تمت إضافة {count} ملفات.",
+      autoFilled: "تم توليد المتطلبات تلقائياً من وصف الوظيفة.",
+      autoFillFailed: "تعذّر استخراج المتطلبات تلقائياً. أضفها يدوياً.",
     },
     managerReport: {
       title: "تقرير مدير التوظيف",
@@ -476,6 +478,9 @@ const COPY = {
       error: "Error: {message}",
       limitReached: "Maximum number of files reached (50).",
       addedFiles: "Added {count} files.",
+      autoFilled: "Auto-filled requirements from the job description.",
+      autoFillFailed:
+        "Couldn't extract requirements automatically. Please enter them manually.",
     },
     managerReport: {
       title: "Hiring manager report",
@@ -930,6 +935,10 @@ export default function TalentWorkflow() {
   const [level, setLevel] = React.useState<string | null>(null);
   const [contract, setContract] = React.useState<string | null>(null);
   const [jobLanguages, setJobLanguages] = React.useState<string[]>([]);
+  const autoSuggestKeyRef = React.useRef<string>("");
+  const [autoSuggestStatus, setAutoSuggestStatus] = React.useState<
+    "idle" | "loading" | "done" | "error"
+  >("idle");
 
   const [templates, setTemplates] = React.useState<JobTemplate[]>([]);
   const [jobId, setJobId] = React.useState<string | null>(null);
@@ -1010,34 +1019,143 @@ export default function TalentWorkflow() {
     );
   }, []);
 
+  const buildRequirementsFromState = React.useCallback((): JobRequirement[] => {
+    return [
+      ...mustSkills.map((req) => ({
+        requirement: req,
+        mustHave: true,
+        weight: 2,
+      })),
+      ...niceSkills.map((req) => ({
+        requirement: req,
+        mustHave: false,
+        weight: 1,
+      })),
+    ];
+  }, [mustSkills, niceSkills]);
+
+  const normalizeSuggestedRequirements = React.useCallback(
+    (items: JobRequirement[] | undefined) => {
+      const seen = new Set<string>();
+      const must: string[] = [];
+      const nice: string[] = [];
+      const normalized: JobRequirement[] = [];
+
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        if (!item) return;
+        const requirement = String(item.requirement ?? "").trim();
+        if (!requirement) return;
+        const key = requirement.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        const mustHave = Boolean(item.mustHave);
+        const clean = requirement.slice(0, 160);
+        const weight = Math.min(
+          3,
+          Math.max(1, Number(item.weight ?? 1) || 1)
+        );
+
+        normalized.push({ requirement: clean, mustHave, weight });
+        if (mustHave) {
+          if (must.length < 20) must.push(clean);
+        } else if (nice.length < 20) {
+          nice.push(clean);
+        }
+      });
+
+      return { normalized, must, nice };
+    },
+    []
+  );
+
+  const runAutoSuggest = React.useCallback(
+    async (source: "watch" | "ensure" = "watch"): Promise<JobRequirement[]> => {
+      if (mustSkills.length || niceSkills.length) return [];
+      const text = jobDescription.trim();
+      if (!text) return [];
+      if (source === "watch" && text.length < 40) return [];
+      if (source === "watch" && autoSuggestKeyRef.current === text) return [];
+
+      setAutoSuggestStatus("loading");
+      try {
+        const response = await jobsApi.suggestFromJD(text);
+        const { normalized, must, nice } = normalizeSuggestedRequirements(
+          response?.items
+        );
+
+        if (normalized.length) {
+          autoSuggestKeyRef.current = text;
+          setMustSkills(must);
+          setNiceSkills(nice);
+          setAutoSuggestStatus("done");
+          if (source === "ensure" || autoSuggestStatus !== "done") {
+            pushBanner({ type: "info", text: copy.notifications.autoFilled });
+          }
+          return normalized;
+        }
+
+        setAutoSuggestStatus("error");
+        if (source === "ensure") {
+          pushBanner({ type: "error", text: copy.notifications.autoFillFailed });
+        }
+        return [];
+      } catch (error) {
+        setAutoSuggestStatus("error");
+        if (source === "ensure") {
+          pushBanner({ type: "error", text: copy.notifications.autoFillFailed });
+        }
+        return [];
+      }
+    },
+    [
+      mustSkills.length,
+      niceSkills.length,
+      jobDescription,
+      jobsApi,
+      normalizeSuggestedRequirements,
+      pushBanner,
+      copy.notifications.autoFilled,
+      copy.notifications.autoFillFailed,
+      autoSuggestStatus,
+    ]
+  );
+
+  React.useEffect(() => {
+    if (mustSkills.length || niceSkills.length) return;
+    const text = jobDescription.trim();
+    if (!text) {
+      setAutoSuggestStatus("idle");
+      autoSuggestKeyRef.current = "";
+      return;
+    }
+    if (text.length < 40) return;
+
+    const handle = window.setTimeout(() => {
+      void runAutoSuggest("watch");
+    }, 800);
+
+    return () => window.clearTimeout(handle);
+  }, [jobDescription, mustSkills.length, niceSkills.length, runAutoSuggest]);
+
   const ensureJob = React.useCallback(async () => {
     if (jobId) return jobId;
-    if (!mustSkills.length && !niceSkills.length) {
+    let requirements = buildRequirementsFromState();
+    if (!requirements.length) {
+      const suggested = await runAutoSuggest("ensure");
+      if (suggested.length) {
+        requirements = suggested;
+      }
+    }
+    if (!requirements.length) {
       pushBanner({
         type: "error",
-        text: copy.notifications.error.replace(
-          "{message}",
-          "Add requirements first"
-        ),
+        text: copy.notifications.autoFillFailed,
       });
       throw new Error("no-requirements");
     }
 
     setSavingJob(true);
     try {
-      const requirements: JobRequirement[] = [
-        ...mustSkills.map((req) => ({
-          requirement: req,
-          mustHave: true,
-          weight: 2,
-        })),
-        ...niceSkills.map((req) => ({
-          requirement: req,
-          mustHave: false,
-          weight: 1,
-        })),
-      ];
-
       const descriptionExtras = [
         level ? `Level: ${level}` : null,
         contract ? `Contract: ${contract}` : null,
@@ -1824,8 +1942,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-
-                    getOptionLabel(option, lang)
+                    {getOptionLabel(option, lang)}
                   </button>
                 ))}
               </div>

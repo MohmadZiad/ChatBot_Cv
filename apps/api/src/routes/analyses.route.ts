@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
+import { Prisma } from "@prisma/client";
 import {
   runAnalysis,
   compareCvEmbeddings,
@@ -19,9 +20,9 @@ async function createPlaceholderAnalysis(
     data: {
       jobId,
       cvId,
-      score: 0,
-      status: reason, // حقل نصي حر إن لم يكن عندك Enum
-    } as any,
+      score: new Prisma.Decimal(0),
+      status: "error",
+    },
   });
 
   return {
