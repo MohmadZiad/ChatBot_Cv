@@ -1,8 +1,6 @@
 // apps/web/src/services/api/http.ts
-const normalizeOrigin = (value?: string | null) => {
-  if (!value) return null;
-  return value.replace(/\/$/, "");
-};
+const normalizeOrigin = (value?: string | null) =>
+  value ? value.replace(/\/$/, "") : null;
 
 const ORIGIN =
   normalizeOrigin(process.env.NEXT_PUBLIC_API_URL) ||
@@ -14,14 +12,36 @@ const API = ORIGIN.endsWith("/api") ? ORIGIN : `${ORIGIN}/api`;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+// helper
+const isFormData = (v: any): v is FormData =>
+  typeof FormData !== "undefined" && v instanceof FormData;
+
 async function request<T>(
   path: string,
-  opts: RequestInit & { method?: HttpMethod } = {}
+  opts: RequestInit & { method?: HttpMethod; body?: any } = {}
 ): Promise<T> {
   const url = `${API}${path}`;
+
+  // جهّز الهيدرز بدون فرض الـ Content-Type لو body = FormData
+  const headers = new Headers(opts.headers || {});
+  let body: BodyInit | undefined = undefined;
+
+  if (opts.body !== undefined && opts.body !== null) {
+    if (isFormData(opts.body)) {
+      body = opts.body; // اترك المتصفح يحدد Content-Type
+    } else if (typeof opts.body === "string") {
+      headers.set("Content-Type", "application/json");
+      body = opts.body; // مفترض تكون جاهزة كسلسلة
+    } else {
+      headers.set("Content-Type", "application/json");
+      body = JSON.stringify(opts.body);
+    }
+  }
+
   const res = await fetch(url, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+    headers,
+    body,
     cache: "no-store",
   });
 
@@ -46,12 +66,9 @@ async function request<T>(
 
 export const http = {
   get: <T>(p: string) => request<T>(p, { method: "GET" }),
-  post: <T>(p: string, body?: any) =>
-    request<T>(p, { method: "POST", body: JSON.stringify(body ?? {}) }),
-  put: <T>(p: string, body?: any) =>
-    request<T>(p, { method: "PUT", body: JSON.stringify(body ?? {}) }),
-  patch: <T>(p: string, body?: any) =>
-    request<T>(p, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
+  post: <T>(p: string, body?: any) => request<T>(p, { method: "POST", body }),
+  put: <T>(p: string, body?: any) => request<T>(p, { method: "PUT", body }),
+  patch: <T>(p: string, body?: any) => request<T>(p, { method: "PATCH", body }),
   delete: <T>(p: string) => request<T>(p, { method: "DELETE" }),
 };
 export { API, ORIGIN };
