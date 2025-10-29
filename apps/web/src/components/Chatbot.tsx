@@ -67,13 +67,58 @@ export default function Chatbot() {
   // Translation shortcut that re-computes when `lang` changes
   const tt = useMemo(() => (p: string) => t(lang, p), [lang]);
 
+  // -------- helpers that must come BEFORE usage --------
+  const formatError = useCallback(
+    (error: unknown): string => {
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "";
+      const normalized = message.toLowerCase();
+      const withDetails = (key: string, detail?: string) => {
+        const base = `⚠️ ${tt(key)}`;
+        return detail ? `${base}\n${tt("chat.errorDetails")} ${detail}` : base;
+      };
+
+      if (
+        normalized.includes("failed to fetch") ||
+        normalized.includes("network") ||
+        normalized.includes("connection")
+      ) {
+        return withDetails("chat.errorNetwork");
+      }
+      if (normalized.includes("timeout")) {
+        return withDetails("chat.errorTimeout");
+      }
+      if (
+        normalized.includes("422") ||
+        normalized.includes("unprocessable") ||
+        normalized.includes("validation")
+      ) {
+        const detail =
+          message && !/^http\b/i.test(message) ? message : undefined;
+        return withDetails("chat.errorValidation", detail);
+      }
+
+      const detail = message && !/^http\b/i.test(message) ? message : undefined;
+      return withDetails("chat.errorGeneric", detail);
+    },
+    [tt]
+  );
+  // -----------------------------------------------------
+
   // Chat log
   const [msgs, setMsgs] = useState<Msg[]>([]);
-  const createIntroMessage = useCallback((): Msg => ({
-    role: "bot",
-    text: tt("chat.hello"),
-    kind: "intro",
-  }), [tt]);
+  const createIntroMessage = useCallback(
+    (): Msg => ({
+      role: "bot",
+      text: tt("chat.hello"),
+      kind: "intro",
+    }),
+    [tt]
+  );
 
   // Data for selects
   const [cvs, setCvs] = useState<any[]>([]);
@@ -117,8 +162,11 @@ export default function Chatbot() {
     const mustTag = tt("chat.mustTag");
     const weightLabel = tt("chat.weightLabel");
     const lines = suggestedReqs
-      .map((item) =>
-        `${item.requirement}${item.mustHave ? ` (${mustTag})` : ""} • ${weightLabel} ${Number(item.weight ?? 1).toFixed(1)}`
+      .map(
+        (item) =>
+          `${item.requirement}${
+            item.mustHave ? ` (${mustTag})` : ""
+          } • ${weightLabel} ${Number(item.weight ?? 1).toFixed(1)}`
       )
       .join("\n");
     try {
@@ -127,7 +175,7 @@ export default function Chatbot() {
     } catch (err: any) {
       appendMsg({ role: "bot", text: formatError(err), kind: "error" });
     }
-  }, [appendMsg, formatError, suggestedReqs, tt]);
+  }, [appendMsg, suggestedReqs, tt, formatError]);
 
   const handleApplySuggested = useCallback(() => {
     if (!suggestedReqs.length) return;
@@ -145,7 +193,9 @@ export default function Chatbot() {
         "pending-job-requirements",
         JSON.stringify(payload)
       );
-      window.dispatchEvent(new CustomEvent("job:suggested", { detail: payload }));
+      window.dispatchEvent(
+        new CustomEvent("job:suggested", { detail: payload })
+      );
     } catch (err: any) {
       appendMsg({ role: "bot", text: formatError(err), kind: "error" });
     }
@@ -173,7 +223,10 @@ export default function Chatbot() {
         description: jd.trim() || title,
         requirements: payload,
       });
-      setJobs((prev) => [job, ...prev.filter((existing) => existing.id !== job.id)]);
+      setJobs((prev) => [
+        job,
+        ...prev.filter((existing) => existing.id !== job.id),
+      ]);
       setJobId(job.id);
       setSuggestedReqs(job.requirements ?? payload);
       appendMsg({ role: "bot", text: `✅ ${tt("chat.jobSaved")}` });
@@ -183,45 +236,6 @@ export default function Chatbot() {
       setSavingJob(false);
     }
   }, [appendMsg, formatError, guessJobTitle, jd, suggestedReqs, tt]);
-
-  const formatError = useCallback(
-    (error: unknown): string => {
-      const message =
-        typeof error === "string"
-          ? error
-          : error instanceof Error
-            ? error.message
-            : "";
-      const normalized = message.toLowerCase();
-      const withDetails = (key: string, detail?: string) => {
-        const base = `⚠️ ${tt(key)}`;
-        return detail ? `${base}\n${tt("chat.errorDetails")} ${detail}` : base;
-      };
-
-      if (
-        normalized.includes("failed to fetch") ||
-        normalized.includes("network") ||
-        normalized.includes("connection")
-      ) {
-        return withDetails("chat.errorNetwork");
-      }
-      if (normalized.includes("timeout")) {
-        return withDetails("chat.errorTimeout");
-      }
-      if (
-        normalized.includes("422") ||
-        normalized.includes("unprocessable") ||
-        normalized.includes("validation")
-      ) {
-        const detail = message && !/^http\b/i.test(message) ? message : undefined;
-        return withDetails("chat.errorValidation", detail);
-      }
-
-      const detail = message && !/^http\b/i.test(message) ? message : undefined;
-      return withDetails("chat.errorGeneric", detail);
-    },
-    [tt]
-  );
 
   // When the chat opens, fetch CVs and Jobs
   useEffect(() => {
@@ -284,7 +298,6 @@ export default function Chatbot() {
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-
   useEffect(() => {
     const onCompleted = (event: Event) => {
       const detail = (event as CustomEvent<CompletedEventDetail>).detail;
@@ -295,11 +308,17 @@ export default function Chatbot() {
       if (analysis.cvId) setCvId(analysis.cvId);
       appendMsg({
         role: "bot",
-        text: `${tt("chat.done")} • ${tt("chat.score")}: ${Number(analysis.score ?? 0).toFixed(2)}`,
+        text: `${tt("chat.done")} • ${tt("chat.score")}: ${Number(
+          analysis.score ?? 0
+        ).toFixed(2)}`,
       });
     };
     window.addEventListener("analysis:completed", onCompleted as EventListener);
-    return () => window.removeEventListener("analysis:completed", onCompleted as EventListener);
+    return () =>
+      window.removeEventListener(
+        "analysis:completed",
+        onCompleted as EventListener
+      );
   }, [tt, appendMsg]);
 
   // Ask AI to suggest requirements from a JD blob
@@ -325,7 +344,9 @@ export default function Chatbot() {
           items
             .map(
               (i) =>
-                `${i.requirement}${i.mustHave ? ` (${mustTag})` : ""} • ${weightLabel} ${i.weight}`
+                `${i.requirement}${
+                  i.mustHave ? ` (${mustTag})` : ""
+                } • ${weightLabel} ${i.weight}`
             )
             .join("\n– "),
       });
@@ -388,7 +409,9 @@ export default function Chatbot() {
         const right = resolveCvLabel(pair.b);
         return `${left} ↔ ${right}: ${pair.similarity.toFixed(1)}%`;
       });
-      const details = res.insights?.length ? `\n${res.insights.join("\n")}` : "";
+      const details = res.insights?.length
+        ? `\n${res.insights.join("\n")}`
+        : "";
       appendMsg({
         role: "bot",
         text: `${tt("chat.compareSummary")}\n${lines.join("\n")}${details}`,
@@ -418,7 +441,10 @@ export default function Chatbot() {
     setAction("pick");
     appendMsg({ role: "user", text: tt("chat.pickBestAction") });
     try {
-      const res = await analysesApi.pickBest({ jobId, cvIds: list as string[] });
+      const res = await analysesApi.pickBest({
+        jobId,
+        cvIds: list as string[],
+      });
       const summary = res.summary.join("\n");
       appendMsg({
         role: "bot",
@@ -510,16 +536,16 @@ export default function Chatbot() {
               initial={{ y: 72, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 60, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 160, damping: 18 }}
+              transition={{ type: "spring", stiffness: 160, damping: 18 }}
               className="absolute bottom-0 end-0 m-6 w-[min(500px,calc(100vw-3rem))] overflow-hidden rounded-[32px] bg-[var(--surface)]/90 text-[var(--foreground)] shadow-2xl shadow-[rgba(17,24,39,0.25)]"
             >
               <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)]/60 bg-[var(--surface)]/90 px-5 py-4">
                 <div>
                   <div className="text-sm font-semibold text-[var(--color-primary)]">
-                    {tt('chat.title')}
+                    {tt("chat.title")}
                   </div>
                   <div className="text-[11px] text-[var(--color-text-muted)]">
-                    {tt('chat.subtitle')}
+                    {tt("chat.subtitle")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -527,7 +553,7 @@ export default function Chatbot() {
                     onClick={resetConversation}
                     className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-medium text-[var(--color-text-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition"
                   >
-                    {tt('chat.reset')}
+                    {tt("chat.reset")}
                   </button>
                   <button
                     onClick={() => setOpen(false)}
@@ -544,12 +570,12 @@ export default function Chatbot() {
                     <div
                       key={`${m.role}-${i}-${m.text.slice(0, 12)}`}
                       className={clsx(
-                        'max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm',
-                        m.role === 'user'
-                          ? 'ms-auto bg-gradient-to-l from-[var(--color-primary)] via-[#ff9440] to-[var(--color-accent)] text-white shadow-lg'
-                          : m.role === 'sys'
-                            ? 'mx-auto bg-[var(--surface-muted)]/80 text-[11px] text-[var(--color-text-muted)]'
-                            : 'me-auto border border-[var(--color-border)] bg-[var(--surface)] text-[var(--foreground)]'
+                        "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm",
+                        m.role === "user"
+                          ? "ms-auto bg-gradient-to-l from-[var(--color-primary)] via-[#ff9440] to-[var(--color-accent)] text-white shadow-lg"
+                          : m.role === "sys"
+                            ? "mx-auto bg-[var(--surface-muted)]/80 text-[11px] text-[var(--color-text-muted)]"
+                            : "me-auto border border-[var(--color-border)] bg-[var(--surface)] text-[var(--foreground)]"
                       )}
                     >
                       {m.text}
@@ -560,105 +586,115 @@ export default function Chatbot() {
                 <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-semibold text-[var(--color-primary)]">
-                      {tt('chat.jdTitle')}
+                      {tt("chat.jdTitle")}
                     </div>
                     <button
-                      onClick={() => setJd('')}
+                      onClick={() => setJd("")}
                       className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
                     >
-                      {tt('chat.clear')}
+                      {tt("chat.clear")}
                     </button>
                   </div>
                   <textarea
                     value={jd}
                     onChange={(e) => setJd(e.target.value)}
                     className="mt-2 w-full min-h-[120px] rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-                    placeholder={tt('chat.jdPlaceholder')}
+                    placeholder={tt("chat.jdPlaceholder")}
                   />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={handleSuggest}
-                    disabled={!jd.trim() || suggesting}
-                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
-                  >
-                    {suggesting ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Wand2 size={16} />
-                    )}
-                    {suggesting ? tt('chat.extracting') : tt('chat.suggest')}
-                  </button>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    {tt('chat.jdHint')}
-                  </span>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={handleSuggest}
+                      disabled={!jd.trim() || suggesting}
+                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+                    >
+                      {suggesting ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Wand2 size={16} />
+                      )}
+                      {suggesting ? tt("chat.extracting") : tt("chat.suggest")}
+                    </button>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">
+                      {tt("chat.jdHint")}
+                    </span>
+                  </div>
+
+                  {suggestedReqs.length ? (
+                    <div className="mt-4 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-4">
+                      <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-muted)]">
+                        <span>{tt("chat.suggestedTitle")}</span>
+                        <button
+                          onClick={() => setSuggestedReqs([])}
+                          className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {suggestedReqs.map((item, idx) => (
+                          <span
+                            key={`${item.requirement}-${idx}`}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)]/80 px-3 py-1 text-[var(--foreground)]"
+                          >
+                            {item.requirement}
+                            <span className="text-[11px] text-[var(--color-text-muted)]">
+                              {item.mustHave ? tt("chat.mustTag") : "nice"} •{" "}
+                              {tt("chat.weightLabel")}{" "}
+                              {Number(item.weight ?? 1).toFixed(1)}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                        <button
+                          onClick={handleApplySuggested}
+                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 px-3 py-1 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                        >
+                          <ClipboardList className="h-3.5 w-3.5" />
+                          {tt("chat.applySuggested")}
+                        </button>
+                        <button
+                          onClick={handleCopySuggested}
+                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                        >
+                          {copied ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          {copied
+                            ? lang === "ar"
+                              ? "تم النسخ"
+                              : "Copied"
+                            : tt("chat.copySuggested")}
+                        </button>
+                        <button
+                          onClick={handleSaveJob}
+                          disabled={savingJob}
+                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-secondary)]/50 px-3 py-1 font-semibold text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10 disabled:opacity-60"
+                        >
+                          {savingJob ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Save className="h-3.5 w-3.5" />
+                          )}
+                          {tt("chat.saveJob")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
-                {suggestedReqs.length ? (
-                  <div className="mt-4 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-4">
-                    <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-muted)]">
-                      <span>{tt('chat.suggestedTitle')}</span>
-                      <button
-                        onClick={() => setSuggestedReqs([])}
-                        className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {suggestedReqs.map((item, idx) => (
-                        <span
-                          key={`${item.requirement}-${idx}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)]/80 px-3 py-1 text-[var(--foreground)]"
-                        >
-                          {item.requirement}
-                          <span className="text-[11px] text-[var(--color-text-muted)]">
-                            {item.mustHave ? tt('chat.mustTag') : 'nice'} • {tt('chat.weightLabel')} {Number(item.weight ?? 1).toFixed(1)}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                      <button
-                        onClick={handleApplySuggested}
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 px-3 py-1 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
-                      >
-                        <ClipboardList className="h-3.5 w-3.5" />
-                        {tt('chat.applySuggested')}
-                      </button>
-                      <button
-                        onClick={handleCopySuggested}
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                        {copied ? (lang === 'ar' ? 'تم النسخ' : 'Copied') : tt('chat.copySuggested')}
-                      </button>
-                      <button
-                        onClick={handleSaveJob}
-                        disabled={savingJob}
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-secondary)]/50 px-3 py-1 font-semibold text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10 disabled:opacity-60"
-                      >
-                        {savingJob ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Save className="h-3.5 w-3.5" />
-                        )}
-                        {tt('chat.saveJob')}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
                   <div className="grid gap-3">
                     <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt('chat.pickCv')}
+                      {tt("chat.pickCv")}
                       <select
                         value={cvId}
                         onChange={(e) => setCvId(e.target.value)}
                         className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
                       >
-                        <option value="">{tt('chat.pickCv')}</option>
+                        <option value="">{tt("chat.pickCv")}</option>
                         {cvs.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.originalFilename || c.id.slice(0, 12)}
@@ -668,13 +704,15 @@ export default function Chatbot() {
                     </label>
 
                     <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt('chat.secondCv')}
+                      {tt("chat.secondCv")}
                       <select
                         value={compareId}
                         onChange={(e) => setCompareId(e.target.value)}
                         className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-secondary)] focus:outline-none"
                       >
-                        <option value="">{tt('chat.secondCvPlaceholder')}</option>
+                        <option value="">
+                          {tt("chat.secondCvPlaceholder")}
+                        </option>
                         {cvs
                           .filter((c) => c.id !== cvId)
                           .map((c) => (
@@ -686,13 +724,13 @@ export default function Chatbot() {
                     </label>
 
                     <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt('chat.pickJob')}
+                      {tt("chat.pickJob")}
                       <select
                         value={jobId}
                         onChange={(e) => setJobId(e.target.value)}
                         className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
                       >
-                        <option value="">{tt('chat.pickJob')}</option>
+                        <option value="">{tt("chat.pickJob")}</option>
                         {jobs.map((j) => (
                           <option key={j.id} value={j.id}>
                             {j.title}
@@ -708,10 +746,10 @@ export default function Chatbot() {
                       disabled={!cvId}
                       className="rounded-full border border-[var(--color-primary)]/50 px-3 py-1 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-40"
                     >
-                      {tt('chat.addSelection')}
+                      {tt("chat.addSelection")}
                     </button>
                     {selectedCvIds.length ? (
-                      <span>{tt('chat.selectedHint')}</span>
+                      <span>{tt("chat.selectedHint")}</span>
                     ) : null}
                   </div>
                   {selectedCvIds.length > 0 && (
@@ -740,37 +778,37 @@ export default function Chatbot() {
                       ) : (
                         <Play size={16} />
                       )}
-                      {loading ? tt('chat.running') : tt('chat.run')}
+                      {loading ? tt("chat.running") : tt("chat.run")}
                     </button>
                     <button
                       onClick={handleCompare}
-                      disabled={action === 'compare'}
+                      disabled={action === "compare"}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-secondary)]/60 bg-[var(--surface-muted)]/60 px-4 py-2 text-sm font-semibold text-[var(--color-secondary)] hover:border-[var(--color-secondary)]"
                     >
-                      {action === 'compare' ? (
+                      {action === "compare" ? (
                         <Loader2 className="animate-spin" size={16} />
                       ) : null}
-                      {tt('chat.compare')}
+                      {tt("chat.compare")}
                     </button>
                     <button
                       onClick={handlePickBest}
-                      disabled={action === 'pick'}
+                      disabled={action === "pick"}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-primary)]/40 bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-primary)] hover:border-[var(--color-primary)]"
                     >
-                      {action === 'pick' ? (
+                      {action === "pick" ? (
                         <Loader2 className="animate-spin" size={16} />
                       ) : null}
-                      {tt('chat.pickBest')}
+                      {tt("chat.pickBest")}
                     </button>
                     <button
                       onClick={handleImprove}
-                      disabled={action === 'improve'}
+                      disabled={action === "improve"}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
                     >
-                      {action === 'improve' ? (
+                      {action === "improve" ? (
                         <Loader2 className="animate-spin" size={16} />
                       ) : null}
-                      {tt('chat.improve')}
+                      {tt("chat.improve")}
                     </button>
                   </div>
                 </div>
@@ -784,14 +822,12 @@ export default function Chatbot() {
                     {(() => {
                       const metrics = result.metrics ?? null;
                       const gaps = result.gaps ?? null;
-                      const missingMust =
-                        metrics?.missingMust?.length
-                          ? metrics.missingMust
-                          : gaps?.mustHaveMissing ?? [];
-                      const improvement =
-                        metrics?.improvement?.length
-                          ? metrics.improvement
-                          : gaps?.improve ?? [];
+                      const missingMust = metrics?.missingMust?.length
+                        ? metrics.missingMust
+                        : (gaps?.mustHaveMissing ?? []);
+                      const improvement = metrics?.improvement?.length
+                        ? metrics.improvement
+                        : (gaps?.improve ?? []);
                       const strengths = metrics?.topStrengths ?? [];
                       const risks = metrics?.riskFlags ?? [];
                       const generatedAt = metrics?.generatedAt
@@ -802,12 +838,19 @@ export default function Chatbot() {
                         <>
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
                             <div className="grid place-items-center rounded-2xl bg-[var(--surface-muted)]/60 p-4">
-                              <ScoreGauge value={Number(result.score ?? metrics?.weightedScore ?? 0)} />
+                              <ScoreGauge
+                                value={Number(
+                                  result.score ?? metrics?.weightedScore ?? 0
+                                )}
+                              />
                             </div>
                             <div className="space-y-3">
                               <div>
                                 <div className="text-lg font-semibold text-[var(--color-primary)]">
-                                  {tt("chat.score")} • {Number(result.score ?? metrics?.weightedScore ?? 0).toFixed(2)}
+                                  {tt("chat.score")} •{" "}
+                                  {Number(
+                                    result.score ?? metrics?.weightedScore ?? 0
+                                  ).toFixed(2)}
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
                                   <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
@@ -820,9 +863,12 @@ export default function Chatbot() {
                                   ) : null}
                                   {generatedAt ? (
                                     <span>
-                                      {generatedAt.toLocaleString(lang === "ar" ? "ar" : "en", {
-                                        hour12: false,
-                                      })}
+                                      {generatedAt.toLocaleString(
+                                        lang === "ar" ? "ar" : "en",
+                                        {
+                                          hour12: false,
+                                        }
+                                      )}
                                     </span>
                                   ) : null}
                                 </div>
@@ -902,7 +948,9 @@ export default function Chatbot() {
                                     ))}
                                   </div>
                                 ) : null}
-                                {!missingMust.length && !improvement.length && !risks.length ? (
+                                {!missingMust.length &&
+                                !improvement.length &&
+                                !risks.length ? (
                                   <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-center">
                                     {tt("chat.stored")}
                                   </div>
@@ -915,7 +963,8 @@ export default function Chatbot() {
                                   href={`/analysis/${result.id}`}
                                   className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
                                 >
-                                  {tt("chat.viewFull")} <ArrowUpRight className="h-3.5 w-3.5" />
+                                  {tt("chat.viewFull")}{" "}
+                                  <ArrowUpRight className="h-3.5 w-3.5" />
                                 </a>
                               </div>
                             </div>
@@ -932,7 +981,8 @@ export default function Chatbot() {
                                     key={`${item.requirement}-${item.score}`}
                                     className="rounded-full border border-[var(--color-secondary)]/40 bg-[var(--surface-soft)] px-3 py-1"
                                   >
-                                    {item.requirement} • {item.score.toFixed(1)} / 10
+                                    {item.requirement} • {item.score.toFixed(1)}{" "}
+                                    / 10
                                   </div>
                                 ))}
                               </div>
@@ -942,7 +992,8 @@ export default function Chatbot() {
                       );
                     })()}
 
-                    {Array.isArray(result.breakdown) && result.breakdown.length > 0 ? (
+                    {Array.isArray(result.breakdown) &&
+                    result.breakdown.length > 0 ? (
                       <div className="space-y-2">
                         <div className="text-sm font-semibold text-[var(--color-text-muted)]">
                           {tt("chat.breakdown") ?? "Breakdown"}

@@ -319,6 +319,14 @@ export default function AIConsole() {
     );
   }, [lang]);
 
+  // ✅ اجعل push-hoisted ومثبت الهوية قبل أي useEffect يعتمد عليه
+  const push = React.useCallback((m: Omit<Msg, "id">) => {
+    setMessages((s) => [
+      ...s,
+      { ...m, id: Math.random().toString(36).slice(2) },
+    ]);
+  }, []);
+
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [reqText, setReqText] = React.useState("");
@@ -347,10 +355,12 @@ export default function AIConsole() {
 
   React.useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        requirements?: ReqItem[];
-        jd?: string;
-      }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          requirements?: ReqItem[];
+          jd?: string;
+        }>
+      ).detail;
       if (!detail?.requirements || !detail.requirements.length) return;
       const normalized = detail.requirements.map((item) => ({
         requirement: item.requirement,
@@ -360,8 +370,9 @@ export default function AIConsole() {
       setReqs(normalized);
       setReqText(
         normalized
-          .map((item) =>
-            `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`
+          .map(
+            (item) =>
+              `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`
           )
           .join("\n")
       );
@@ -455,12 +466,6 @@ export default function AIConsole() {
     const el = listRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, result]);
-
-  const push = (m: Omit<Msg, "id">) =>
-    setMessages((s) => [
-      ...s,
-      { ...m, id: Math.random().toString(36).slice(2) },
-    ]);
 
   const metrics = React.useMemo(
     () => computeMetricsFromResult(result),
@@ -1368,11 +1373,11 @@ export default function AIConsole() {
                       </div>
                     )}
                     {riskMessages.length > 0 && (
-                      <div className="flex flex-wrap gap-2 text-[11px] text-[#b42318]">
+                      <div className="flex الفlex-wrap gap-2 text-[11px] text-[#b42318]">
                         {riskMessages.map((msg) => (
                           <span
                             key={msg}
-                            className="inline-flex items-center gap-2 rounded-full bg-[#fee4e2] px-3 py-1"
+                            className="inline-flex items-center gap-2 bg-[#fee4e2] rounded-full px-3 py-1"
                           >
                             <AlertTriangle className="h-3.5 w-3.5" /> {msg}
                           </span>
