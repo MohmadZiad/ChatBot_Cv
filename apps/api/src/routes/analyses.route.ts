@@ -1,3 +1,4 @@
+// apps/api/src/routes/analyses.route.ts
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import {
@@ -6,10 +7,11 @@ import {
   recommendTopCandidates,
   improvementSuggestions,
 } from "../services/analysis.js";
+import { Prisma, AnalysisStatus } from "@prisma/client";
 
 const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
 
-// ✅ دالة مساعدة لإنشاء تحليل رمزي Placeholder
+// دالة تساعد على إنشاء تحليل Placeholder عند نقص النص/المتطلبات
 async function createPlaceholderAnalysis(
   jobId: string,
   cvId: string,
@@ -20,17 +22,26 @@ async function createPlaceholderAnalysis(
       jobId,
       cvId,
       score: 0,
-      status: "error", // ✅ قيمة صحيحة من enum AnalysisStatus
-      breakdown: [],
-      gaps: null,
-      evidence: null,
-      model: null,
+      status: AnalysisStatus.validated, // ✅ enum صحيح
+      breakdown: [], // Json OK
+      gaps: Prisma.DbNull, // ✅ بدل null
+      evidence: Prisma.DbNull, // ✅ بدل null
+      model: null, // String? OK
+      // نخزن السبب داخل الميتريكس بدلًا من status نصّي
       metrics: {
-        placeholder: true,
-        reason, // السبب (no_text / no_requirements)
-        minText: MIN_TEXT,
-        createdAt: new Date().toISOString(),
-      },
+        totalRequirements: 0,
+        mustCount: 0,
+        niceCount: 0,
+        mustPercent: 0,
+        nicePercent: 0,
+        weightedScore: 0,
+        gatePassed: false,
+        missingMust: [],
+        improvement: [],
+        topStrengths: [],
+        riskFlags: [reason],
+        generatedAt: new Date().toISOString(),
+      } as any,
     },
   });
 
@@ -39,12 +50,11 @@ async function createPlaceholderAnalysis(
     id: a.id,
     jobId,
     cvId,
+    status: "validated",
     score: 0,
     breakdown: [],
     gaps: null,
     metrics: {
-      ...a.metrics,
-      riskFlags: [reason],
       totalRequirements: 0,
       mustCount: 0,
       niceCount: 0,
@@ -55,6 +65,7 @@ async function createPlaceholderAnalysis(
       missingMust: [],
       improvement: [],
       topStrengths: [],
+      riskFlags: [reason],
       generatedAt: new Date().toISOString(),
     },
     message:
@@ -66,12 +77,11 @@ async function createPlaceholderAnalysis(
   };
 }
 
-// ✅ المسار الرئيسي
 export async function analysesRoute(app: FastifyInstance) {
-  // 🔹 تشغيل التحليل
+  // POST /api/analyses/run
   app.post("/run", async (req, reply) => {
-    const { jobId, cvId } = (await req.body) as any;
-
+    const body = (req.body ?? {}) as { jobId?: string; cvId?: string };
+    const { jobId, cvId } = body;
     if (!jobId || !cvId) {
       return reply.code(400).send({
         ok: false,
@@ -81,12 +91,15 @@ export async function analysesRoute(app: FastifyInstance) {
     }
 
     try {
+      // تأكد من وجود الـ CV
       const cv = await prisma.cV.findUnique({ where: { id: cvId } });
-      if (!cv)
+      if (!cv) {
         return reply
           .code(404)
           .send({ ok: false, code: "CV_NOT_FOUND", message: "CV not found" });
+      }
 
+      // Placeholder لو النص قصير
       const textLen = cv.parsedText?.trim()?.length ?? 0;
       if (textLen < MIN_TEXT) {
         app.log.warn(
@@ -97,11 +110,17 @@ export async function analysesRoute(app: FastifyInstance) {
         return reply.code(201).send(payload);
       }
 
+      // تحليل كامل
       const res = await runAnalysis(jobId, cvId);
       return reply.code(201).send(res);
     } catch (err: any) {
-      const code = (err?.code || "").toString();
+      // تحويل بعض الأخطاء إلى Placeholder بنتيجة 201
+      const code = String(err?.code || "");
       if (code === "NO_CV_TEXT") {
+        app.log.warn(
+          { err, cvId: (req.body as any)?.cvId },
+          "placeholder analysis on NO_CV_TEXT"
+        );
         const payload = await createPlaceholderAnalysis(
           (req.body as any).jobId,
           (req.body as any).cvId,
@@ -110,6 +129,10 @@ export async function analysesRoute(app: FastifyInstance) {
         return reply.code(201).send(payload);
       }
       if (code === "NO_JOB_REQUIREMENTS") {
+        app.log.warn(
+          { err, jobId: (req.body as any)?.jobId },
+          "placeholder analysis on NO_JOB_REQUIREMENTS"
+        );
         const payload = await createPlaceholderAnalysis(
           (req.body as any).jobId,
           (req.body as any).cvId,
@@ -119,7 +142,8 @@ export async function analysesRoute(app: FastifyInstance) {
       }
 
       app.log.error({ err }, "run analysis failed");
-      return reply.code(err?.status ?? 500).send({
+      const status = err?.status ?? 500;
+      return reply.code(status).send({
         ok: false,
         code: code || "ANALYSIS_FAILED",
         message: err?.message || "run analysis failed",
@@ -127,9 +151,9 @@ export async function analysesRoute(app: FastifyInstance) {
     }
   });
 
-  // 🔹 جلب تحليل معين
+  // GET /api/analyses/:id
   app.get("/:id", async (req, reply) => {
-    const { id } = req.params as any;
+    const { id } = req.params as { id: string };
     const a = await prisma.analysis.findUnique({ where: { id } });
     if (!a) return reply.code(404).send({ ok: false, code: "NOT_FOUND" });
     return {
@@ -140,9 +164,9 @@ export async function analysesRoute(app: FastifyInstance) {
     };
   });
 
-  // 🔹 جلب التحليلات حسب CV
+  // GET /api/analyses/by-cv/:cvId
   app.get("/by-cv/:cvId", async (req) => {
-    const { cvId } = req.params as any;
+    const { cvId } = req.params as { cvId: string };
     const list = await prisma.analysis.findMany({
       where: { cvId },
       orderBy: { createdAt: "desc" },
@@ -155,9 +179,9 @@ export async function analysesRoute(app: FastifyInstance) {
     }));
   });
 
-  // 🔹 جلب التحليلات حسب الوظيفة
+  // GET /api/analyses/by-job/:jobId
   app.get("/by-job/:jobId", async (req) => {
-    const { jobId } = req.params as any;
+    const { jobId } = req.params as { jobId: string };
     const list = await prisma.analysis.findMany({
       where: { jobId },
       orderBy: [{ score: "desc" }, { createdAt: "desc" }],
@@ -173,15 +197,16 @@ export async function analysesRoute(app: FastifyInstance) {
     }));
   });
 
-  // 🔹 مقارنة الـ CV embeddings
+  // POST /api/analyses/compare
   app.post("/compare", async (req, reply) => {
     try {
-      const { cvIds = [] } = (await req.body) as any;
+      const { cvIds = [] } = (req.body ?? {}) as { cvIds?: string[] };
       const res = await compareCvEmbeddings(Array.isArray(cvIds) ? cvIds : []);
       return { ok: true, ...res };
     } catch (err: any) {
       app.log.error({ err }, "compare embeddings failed");
-      return reply.code(err?.status ?? 400).send({
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
         ok: false,
         code: err?.code || "COMPARE_FAILED",
         message: err?.message || "compare failed",
@@ -189,19 +214,28 @@ export async function analysesRoute(app: FastifyInstance) {
     }
   });
 
-  // 🔹 ترشيح أفضل المرشحين
+  // POST /api/analyses/pick-best
   app.post("/pick-best", async (req, reply) => {
     try {
-      const { jobId, cvIds = [], top } = (await req.body) as any;
-      const res = await recommendTopCandidates(
+      const {
         jobId,
+        cvIds = [],
+        top,
+      } = (req.body ?? {}) as {
+        jobId?: string;
+        cvIds?: string[];
+        top?: number;
+      };
+      const res = await recommendTopCandidates(
+        jobId!,
         Array.isArray(cvIds) ? cvIds : [],
         Number(top) || 3
       );
       return { ok: true, ...res };
     } catch (err: any) {
       app.log.error({ err }, "pick best failed");
-      return reply.code(err?.status ?? 400).send({
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
         ok: false,
         code: err?.code || "PICK_FAILED",
         message: err?.message || "pick best failed",
@@ -209,19 +243,26 @@ export async function analysesRoute(app: FastifyInstance) {
     }
   });
 
-  // 🔹 تحسينات الذكاء الاصطناعي
+  // POST /api/analyses/improve
   app.post("/improve", async (req, reply) => {
     try {
-      const { jobId, cvId, lang } = (await req.body) as any;
+      const { jobId, cvId, lang } = (req.body ?? {}) as {
+        jobId?: string;
+        cvId?: string;
+        lang?: "ar" | "en";
+      };
+
       const response = await improvementSuggestions(
-        jobId,
-        cvId,
+        jobId!,
+        cvId!,
         lang === "en" ? "en" : "ar"
       );
+
       return reply.send(response);
     } catch (err: any) {
       app.log.error({ err }, "improve suggestions failed");
-      return reply.code(err?.status ?? 400).send({
+      const status = err?.status ?? 400;
+      return reply.code(status).send({
         ok: false,
         code: err?.code || "IMPROVE_FAILED",
         message: err?.message || "improvement failed",

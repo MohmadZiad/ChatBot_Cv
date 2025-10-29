@@ -838,7 +838,7 @@ function buildAiNarrative(
   }
 
   const topStrengths = Array.isArray(analysis.metrics?.topStrengths)
-    ? analysis.metrics?.topStrengths ?? []
+    ? (analysis.metrics?.topStrengths ?? [])
     : [];
   if (topStrengths.length) {
     topStrengths.slice(0, 4).forEach((item) => {
@@ -876,12 +876,11 @@ function buildAiNarrative(
     weaknesses.push(texts.weaknesses.qualityLow);
   }
 
-  const missingMust =
-    ai?.metrics?.missingMust?.length
-      ? ai.metrics.missingMust
-      : scores.missingMust?.length
-        ? scores.missingMust
-        : (analysis.gaps as any)?.mustHaveMissing ?? [];
+  const missingMust = ai?.metrics?.missingMust?.length
+    ? ai.metrics.missingMust
+    : scores.missingMust?.length
+      ? scores.missingMust
+      : ((analysis.gaps as any)?.mustHaveMissing ?? []);
   if (missingMust.length) {
     weaknesses.push(
       fmt(texts.weaknesses.missingMust, {
@@ -890,10 +889,9 @@ function buildAiNarrative(
     );
   }
 
-  const improvables =
-    ai?.metrics?.improvement?.length
-      ? ai.metrics.improvement
-      : (analysis.gaps as any)?.improve ?? [];
+  const improvables = ai?.metrics?.improvement?.length
+    ? ai.metrics.improvement
+    : ((analysis.gaps as any)?.improve ?? []);
   if (improvables.length) {
     weaknesses.push(
       fmt(texts.weaknesses.aiGaps, {
@@ -1021,6 +1019,7 @@ export default function TalentWorkflow() {
 
   React.useEffect(() => {
     if (mustSkills.length || niceSkills.length) return;
+
     const text = jobDescription.trim();
     if (!text) {
       setAutoSuggestStatus("idle");
@@ -1067,10 +1066,7 @@ export default function TalentWorkflow() {
         seen.add(key);
         const mustHave = Boolean(item.mustHave);
         const clean = requirement.slice(0, 160);
-        const weight = Math.min(
-          3,
-          Math.max(1, Number(item.weight ?? 1) || 1)
-        );
+        const weight = Math.min(3, Math.max(1, Number(item.weight ?? 1) || 1));
 
         normalized.push({ requirement: clean, mustHave, weight });
         if (mustHave) {
@@ -1113,13 +1109,19 @@ export default function TalentWorkflow() {
 
         setAutoSuggestStatus("error");
         if (source === "ensure") {
-          pushBanner({ type: "error", text: copy.notifications.autoFillFailed });
+          pushBanner({
+            type: "error",
+            text: copy.notifications.autoFillFailed,
+          });
         }
         return [];
-      } catch (error) {
+      } catch {
         setAutoSuggestStatus("error");
         if (source === "ensure") {
-          pushBanner({ type: "error", text: copy.notifications.autoFillFailed });
+          pushBanner({
+            type: "error",
+            text: copy.notifications.autoFillFailed,
+          });
         }
         return [];
       }
@@ -1128,7 +1130,6 @@ export default function TalentWorkflow() {
       mustSkills.length,
       niceSkills.length,
       jobDescription,
-      jobsApi,
       normalizeSuggestedRequirements,
       pushBanner,
       copy.notifications.autoFilled,
@@ -2653,52 +2654,52 @@ export default function TalentWorkflow() {
                           </span>
                         </div>
                         <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                        <div className="font-semibold text-[#D85E00]">
-                          {copy.comparison.recommendation}
-                        </div>
-                        <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm">
-                          <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
-                          <span>{narrative.summary}</span>
-                        </div>
-                      </div>
-                      <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                        <div className="font-semibold text-[#16A34A]">
-                          {copy.comparison.strengths}
-                        </div>
-                        {narrative.strengths.length ? (
-                          <div className="mt-1 flex flex-wrap gap-1.5">
-                            {narrative.strengths.map((line, index) => (
-                              <span
-                                key={`modal-strength-${item.id}-${index}`}
-                                className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
-                              >
-                                {line}
-                              </span>
-                            ))}
+                          <div className="font-semibold text-[#D85E00]">
+                            {copy.comparison.recommendation}
                           </div>
-                        ) : (
-                          <p className="text-[#2F3A4A]/50">—</p>
-                        )}
-                      </div>
-                      <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                        <div className="font-semibold text-[#D85E00]">
-                          {copy.comparison.weaknesses}
-                        </div>
-                        {narrative.weaknesses.length ? (
-                          <div className="mt-1 flex flex-wrap gap-1.5">
-                            {narrative.weaknesses.map((line, index) => (
-                              <span
-                                key={`modal-weakness-${item.id}-${index}`}
-                                className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
-                              >
-                                {line}
-                              </span>
-                            ))}
+                          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm">
+                            <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
+                            <span>{narrative.summary}</span>
                           </div>
-                        ) : (
-                          <p className="text-[#2F3A4A]/50">—</p>
-                        )}
-                      </div>
+                        </div>
+                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
+                          <div className="font-semibold text-[#16A34A]">
+                            {copy.comparison.strengths}
+                          </div>
+                          {narrative.strengths.length ? (
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {narrative.strengths.map((line, index) => (
+                                <span
+                                  key={`modal-strength-${item.id}-${index}`}
+                                  className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
+                                >
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[#2F3A4A]/50">—</p>
+                          )}
+                        </div>
+                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
+                          <div className="font-semibold text-[#D85E00]">
+                            {copy.comparison.weaknesses}
+                          </div>
+                          {narrative.weaknesses.length ? (
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {narrative.weaknesses.map((line, index) => (
+                                <span
+                                  key={`modal-weakness-${item.id}-${index}`}
+                                  className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
+                                >
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[#2F3A4A]/50">—</p>
+                          )}
+                        </div>
                         <div className="mt-3 grid gap-2 text-xs text-[#2F3A4A]/70">
                           <div>
                             <span className="font-semibold text-[#D85E00]">
