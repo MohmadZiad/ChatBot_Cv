@@ -30,6 +30,7 @@ import {
 } from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { useLang } from "@/lib/use-lang";
 import RequirementPicker, {
   type ReqItem,
 } from "@/components/RequirementPicker";
@@ -138,25 +139,6 @@ function buildIntroMessage(lang: Lang): Msg {
       </div>
     ),
   };
-}
-
-function getLangFromStorage(): Lang {
-  try {
-    if (typeof window !== "undefined") {
-      return (window.localStorage.getItem("lang") as Lang) || "ar";
-    }
-  } catch {}
-  return "ar";
-}
-function useLang(): Lang {
-  const [lang, setLang] = React.useState<Lang>("ar");
-  React.useEffect(() => {
-    setLang(getLangFromStorage());
-    const onStorage = () => setLang(getLangFromStorage());
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-  return lang;
 }
 
 function parseRequirements(text: string): JobRequirement[] {
