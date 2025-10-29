@@ -435,17 +435,21 @@ export async function recommendTopCandidates(
   ranking.sort((a, b) => Number(b.score) - Number(a.score));
   const best = ranking.slice(0, Math.min(top, ranking.length));
 
-  const summary = best.map((item, idx) => {
-    const prefix = `#${idx + 1} ${item.fileName}`;
-    const parts = [
-      `${prefix} — درجة ${Number(item.score).toFixed(1)} / 10`,
-      `تغطية المتطلبات الحرجة ${Number(item.mustPercent).toFixed(1)}%`,
-    ];
-    if (item.missingMust.length) {
-      parts.push(`يفتقد إلى: ${item.missingMust.slice(0, 3).join("، ")}`);
-    }
-    return parts.join(" • ");
-  });
+  const summary = best.length
+    ? best.map((item, idx) => {
+        const prefix = `#${idx + 1} ${item.fileName}`;
+        const parts = [
+          `${prefix} — درجة ${Number(item.score).toFixed(1)} / 10`,
+          `تغطية المتطلبات الحرجة ${Number(item.mustPercent).toFixed(1)}%`,
+        ];
+        if (item.missingMust.length) {
+          parts.push(`يفتقد إلى: ${item.missingMust.slice(0, 3).join("، ")}`);
+        }
+        return parts.join(" • ");
+      })
+    : [
+        "لم نعثر على تحليلات صالحة للمرشحين المختارين. تأكد من تشغيل التحليل لكل سيرة واكتمال المتطلبات أولًا.",
+      ];
 
   return {
     job: { id: job.id, title: job.title },
@@ -481,7 +485,54 @@ export async function improvementSuggestions(
     orderBy: { createdAt: "desc" },
   });
 
-  const analysis = latest ?? (await runAnalysis(jobId, cvId));
+  let analysis = latest;
+  if (!analysis) {
+    try {
+      analysis = await runAnalysis(jobId, cvId);
+    } catch (err: any) {
+      if (err?.code === "NO_CV_TEXT" || err?.code === "NO_JOB_REQUIREMENTS") {
+        return {
+          ok: false,
+          summary:
+            lang === "ar"
+              ? "لا يمكن توليد توصيات لأن السيرة الذاتية لا تحتوي نصًا صالحًا أو أن المتطلبات غير مكتملة. أعد الرفع بصيغة واضحة أو حدّث المتطلبات."
+              : "Cannot generate recommendations because the CV has no extractable text or the job requirements are incomplete. Upload a clearer file or update the requirements.",
+          suggestions: [],
+          metrics: {
+            score: 0,
+            mustPercent: 0,
+            nicePercent: 0,
+            missingMust: [],
+            improvement: [],
+          },
+          cv: { id: cv.id, name: cv.originalFilename || cv.id },
+          job: { id: job.id, title: job.title },
+        };
+      }
+      throw err;
+    }
+  }
+
+  if (!analysis) {
+    return {
+      ok: false,
+      summary:
+        lang === "ar"
+          ? "لم نعثر على تحليل سابق لهذه السيرة. شغّل التحليل أولاً ثم اطلب التحسينات."
+          : "No analysis found for this CV. Run the analysis first, then request improvements.",
+      suggestions: [],
+      metrics: {
+        score: 0,
+        mustPercent: 0,
+        nicePercent: 0,
+        missingMust: [],
+        improvement: [],
+      },
+      cv: { id: cv.id, name: cv.originalFilename || cv.id },
+      job: { id: job.id, title: job.title },
+    };
+  }
+
   const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
 
   const missingMust: string[] = metrics?.missingMust || [];
@@ -606,6 +657,7 @@ export async function improvementSuggestions(
   }
 
   return {
+    ok: true,
     summary: finalSummary,
     suggestions: finalSuggestions,
     metrics: {

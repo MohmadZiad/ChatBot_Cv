@@ -85,37 +85,6 @@ function joinParts(parts: (string | null | undefined)[], sep = "\n"): string {
     .join(sep);
 }
 
-/** تحميل لغات Tesseract مع fallback مرن (v6) */
-async function loadTesseractLanguages(
-  worker: any,
-  langsArr: string[],
-  log?: (m: any) => void
-) {
-  try {
-    // بعض بنايات v6 تفضّل varargs:
-    await worker.loadLanguage(...langsArr);
-  } catch (err) {
-    const message = (err as any)?.message || String(err);
-    const shouldRetryAsString =
-      err instanceof TypeError ||
-      /map is not a function/i.test(message) ||
-      /languageMap/i.test(message) ||
-      /langs?Arr/i.test(message);
-
-    if (!shouldRetryAsString) throw err;
-
-    log?.({
-      step: "tesseract-loadLanguage",
-      retry: "join",
-      langs: langsArr,
-      error: message,
-    });
-
-    // fallback: سلسلة موحّدة "eng+ara"
-    await worker.loadLanguage(langsArr.join("+"));
-  }
-}
-
 /* =========================
    PDF extractors
 ========================= */
@@ -249,19 +218,24 @@ async function ocrPdf(buf: Buffer, log?: (m: any) => void): Promise<string> {
   const DEBUG = env("OCR_DEBUG", env("EXTRACT_DEBUG", "0")) !== "0";
 
   try {
-    const { createWorker } = await getTesseract();
+    const { createWorker, OEM } = await getTesseract();
     log?.({ step: "ocr", msg: "creating worker..." });
 
-    // ✅ v6: مرّر لائحة اللغات (أو []) أولاً، ثم الخيارات كوسيط ثانٍ
-    const worker = await createWorker([], {
-      langPath: TESSDATA,
-      cacheMethod: "readOnly",
-      // logger: DEBUG ? (m: any) => log?.({ step: "tesseract", m }) : undefined,
-    });
+    const langString = langsArr.join("+") || "eng";
+
+    // ✅ v6: مرّر سلسلة اللغات مباشرة عند إنشاء العامل
+    const worker = await createWorker(
+      langString,
+      (OEM?.LSTM_ONLY ?? undefined) as any,
+      {
+        langPath: TESSDATA,
+        cacheMethod: "readOnly",
+        // logger: DEBUG ? (m: any) => log?.({ step: "tesseract", m }) : undefined,
+      }
+    );
     log?.({ step: "ocr", msg: "worker created" });
 
-    await loadTesseractLanguages(worker, langsArr, log);
-    await worker.initialize(langsArr.join("+"));
+    await worker.reinitialize(langString);
 
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
@@ -337,7 +311,7 @@ export async function parsePlainText(buf: Buffer): Promise<string> {
 
 export async function parseImageWithOCR(buf: Buffer): Promise<string> {
   try {
-    const { createWorker } = await getTesseract();
+    const { createWorker, OEM } = await getTesseract();
     const langsArr = (env("OCR_LANGS", "eng+ara") || "eng")
       .replace(/,/g, "+")
       .split("+")
@@ -348,13 +322,18 @@ export async function parseImageWithOCR(buf: Buffer): Promise<string> {
       path.join(process.cwd(), "apps/api/assets/tessdata")
     )!;
 
-    // ✅ v6: مرّر [] أولاً ثم الخيارات
-    const worker = await createWorker([], {
-      langPath: TESSDATA,
-      cacheMethod: "readOnly",
-    });
-    await loadTesseractLanguages(worker, langsArr);
-    await worker.initialize(langsArr.join("+"));
+    const langString = langsArr.join("+") || "eng";
+
+    // ✅ v6: مرّر سلسلة اللغات مباشرة عند إنشاء العامل
+    const worker = await createWorker(
+      langString,
+      (OEM?.LSTM_ONLY ?? undefined) as any,
+      {
+        langPath: TESSDATA,
+        cacheMethod: "readOnly",
+      }
+    );
+    await worker.reinitialize(langString);
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
       tessedit_ocr_engine_mode: "1",
