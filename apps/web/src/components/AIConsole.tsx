@@ -18,23 +18,25 @@ import {
   AlertTriangle,
   Play, // ✅ Fix: missing icon import
 } from "lucide-react";
+
+import { http } from "../services/http";
 import { cvApi, type UploadCVResponse } from "@/services/api/cv";
 import { jobsApi, type JobRequirement, type Job } from "@/services/api/jobs";
 import {
+  analysesApi, // نستخدمه لجلب الـanalysis والـpickBest
   type Analysis,
   type AnalysisMetrics,
   type PerRequirement,
-} from "@/services/api/analyses"; // use our flexible fetch below
+} from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import RequirementPicker, {
   type ReqItem,
 } from "@/components/RequirementPicker";
 
-/**
- * Lightweight circular score gauge rendered via SVG.
- * Kept inline to avoid missing imports and ensure portability.
- */
+/* ────────────────────────────────────────────────────────────────────────────
+   Inline SVG score gauge (لا يعتمد على أي كومبوننت خارجي)
+   ──────────────────────────────────────────────────────────────────────────── */
 function ScoreGauge({
   value = 0,
   size = 120,
@@ -94,7 +96,9 @@ function ScoreGauge({
   );
 }
 
-/** Chat message shape */
+/* ────────────────────────────────────────────────────────────────────────────
+   Types + helpers
+   ──────────────────────────────────────────────────────────────────────────── */
 type Msg = {
   id: string;
   role: "bot" | "user" | "sys";
@@ -154,6 +158,7 @@ function useLang(): Lang {
   }, []);
   return lang;
 }
+
 function parseRequirements(text: string): JobRequirement[] {
   return text
     .split("\n")
@@ -165,11 +170,49 @@ function parseRequirements(text: string): JobRequirement[] {
         .map((p) => p.trim())
         .filter(Boolean);
       const requirement = parts[0] || line;
-      const mustHave = parts.some((p) => /^must/i.test(p) || /^ضروري/.test(p));
+      const mustHave = parts.some(
+        (p) => /^must/i.test(p) || /^ضروري/.test(p) || /^أساسي/.test(p)
+      );
       const weightPart = parts.find((p) => /^\d+(\.\d+)?$/.test(p));
       const weight = weightPart ? Number(weightPart) : 1;
       return { requirement, mustHave, weight };
     });
+}
+
+/* تحويل وصف الوظيفة إلى متطلبات (محلي/بدون باكند) */
+function extractRequirementsFromDescription(desc: string): JobRequirement[] {
+  if (!desc.trim()) return [];
+  const parts = desc
+    .split(/[.\n\r;؛]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const MUST_HINTS = [/ضروري/i, /must/i, /required/i, /أساسي/i, /لا بد/i];
+  const WEIGHTS: Array<{ re: RegExp; w: number }> = [
+    { re: /(5\+|خمسة|خبرة كبيرة|senior|lead)/i, w: 2 },
+    { re: /(3\+|ثلاثة|mid|متوسط)/i, w: 1.5 },
+  ];
+
+  const uniq = new Set<string>();
+  const reqs: JobRequirement[] = [];
+  for (const raw of parts) {
+    let requirement = raw.replace(/^(?:-|\*|•)\s*/, "").trim();
+    if (!requirement) continue;
+    if (/^\s*(الوصف|المهام|عن الفريق|عن الشركة)\s*:?/i.test(requirement))
+      continue;
+
+    const mustHave = MUST_HINTS.some((re) => re.test(requirement));
+    let weight = 1;
+    for (const { re, w } of WEIGHTS)
+      if (re.test(requirement)) weight = Math.max(weight, w);
+    if (requirement.length > 160) requirement = requirement.slice(0, 160) + "…";
+    const key = requirement.toLowerCase();
+    if (uniq.has(key)) continue;
+    uniq.add(key);
+    reqs.push({ requirement, mustHave, weight });
+    if (reqs.length >= 20) break;
+  }
+  return reqs;
 }
 
 type BroadcastPayload = {
@@ -201,7 +244,7 @@ const riskCopy: Record<string, { ar: string; en: string }> = {
 
 const toStringArray = (input: unknown): string[] =>
   Array.isArray(input)
-    ? input.filter((item): item is string => typeof item === "string")
+    ? input.filter((x): x is string => typeof x === "string")
     : [];
 
 function getRiskLabel(flag: string, lang: Lang): string {
@@ -273,6 +316,9 @@ const formatPercent = (value: number) => {
   return `${Math.max(0, Math.min(100, safe)).toFixed(1)}%`;
 };
 
+/* ────────────────────────────────────────────────────────────────────────────
+   Component
+   ──────────────────────────────────────────────────────────────────────────── */
 export default function AIConsole() {
   const lang = useLang();
   const tt = (k: string) => t(lang, k);
@@ -280,17 +326,15 @@ export default function AIConsole() {
   const [messages, setMessages] = React.useState<Msg[]>(() => [
     buildIntroMessage(lang),
   ]);
-
   React.useEffect(() => {
     const intro = buildIntroMessage(lang);
-    setMessages((prev) => {
-      if (!prev.length) return [intro];
-      return prev.map((msg) =>
+    setMessages((prev) =>
+      prev.map((msg) =>
         msg.id === INTRO_MESSAGE_ID && msg.role === "bot"
           ? { ...intro, id: msg.id }
           : msg
-      );
-    });
+      )
+    );
   }, [lang]);
 
   const [title, setTitle] = React.useState("");
@@ -311,15 +355,14 @@ export default function AIConsole() {
     if (reqs.length) return 3;
     return 2;
   }, [result, cvInfo, cvFile, reqs.length]);
+
   const prevMaxRef = React.useRef(maxStep);
   React.useEffect(() => {
-    if (maxStep > prevMaxRef.current) {
-      setActiveStep(maxStep);
-    } else if (activeStep > maxStep) {
-      setActiveStep(maxStep);
-    }
+    if (maxStep > prevMaxRef.current) setActiveStep(maxStep);
+    else if (activeStep > maxStep) setActiveStep(maxStep);
     prevMaxRef.current = maxStep;
   }, [maxStep, activeStep]);
+
   const goToStep = React.useCallback(
     (step: number) => {
       if (step <= maxStep) setActiveStep(step);
@@ -403,25 +446,13 @@ export default function AIConsole() {
     [result]
   );
   const riskMessages = React.useMemo(
-    () =>
-      metrics ? metrics.riskFlags.map((flag) => getRiskLabel(flag, lang)) : [],
+    () => (metrics ? metrics.riskFlags.map((f) => getRiskLabel(f, lang)) : []),
     [metrics, lang]
   );
   const canExport = Boolean(
     result &&
       ((result.breakdown as PerRequirement[] | undefined)?.length || metrics)
   );
-  const createdAtLabel = React.useMemo(() => {
-    if (!result?.createdAt) return "";
-    try {
-      return new Date(result.createdAt).toLocaleString(
-        lang === "ar" ? "ar-SA" : "en-US",
-        { dateStyle: "medium", timeStyle: "short" }
-      );
-    } catch {
-      return result.createdAt;
-    }
-  }, [result?.createdAt, lang]);
 
   const onSendReqs = () => {
     if (!reqText.trim()) return;
@@ -454,7 +485,6 @@ export default function AIConsole() {
     setReqText("");
   };
 
-  // إدراج بند من RequirementPicker إلى الـtextarea مباشرة (بدون تغيير لوجيك التحليل)
   const onQuickAdd = (item: ReqItem) => {
     const line = `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`;
     setReqText((prev) => (prev ? `${prev}\n${line}` : line));
@@ -463,7 +493,6 @@ export default function AIConsole() {
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
     if (!f) return;
-    // Validate size (<= 20MB)
     const MAX = 20 * 1024 * 1024;
     if (f.size > MAX) {
       push({
@@ -515,8 +544,8 @@ export default function AIConsole() {
       Number(item.score10 ?? 0).toFixed(1),
     ]);
     const csv = [header, ...rows]
-      .map((columns) =>
-        columns.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      .map((cols) =>
+        cols.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
       )
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -547,22 +576,21 @@ export default function AIConsole() {
             <td>${item.weight}</td>
             <td>${(item.similarity * 100).toFixed(1)}%</td>
             <td>${Number(item.score10 ?? 0).toFixed(1)}</td>
-          </tr>
-        `
+          </tr>`
       )
       .join("");
 
-    const metricsBlock = metrics
+    const m = computeMetricsFromResult(result);
+    const metricsBlock = m
       ? `
         <section>
           <h2 style="margin-bottom:6px;font-size:14px;">Metrics</h2>
           <ul style="padding-left:16px; margin:0 0 12px 0;">
-            <li>Must match: ${metrics.mustPercent.toFixed(1)}%</li>
-            <li>Nice-to-have: ${metrics.nicePercent.toFixed(1)}%</li>
-            <li>Score /10: ${metrics.weightedScore.toFixed(1)}</li>
+            <li>Must match: ${m.mustPercent.toFixed(1)}%</li>
+            <li>Nice-to-have: ${m.nicePercent.toFixed(1)}%</li>
+            <li>Score /10: ${m.weightedScore.toFixed(1)}</li>
           </ul>
-        </section>
-      `
+        </section>`
       : "";
 
     const html = `
@@ -596,21 +624,20 @@ export default function AIConsole() {
             <tbody>${rows}</tbody>
           </table>
         </body>
-      </html>
-    `;
+      </html>`;
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(html);
     win.document.close();
     win.focus();
-  }, [result, jobInfo?.title, metrics]);
+  }, [result, jobInfo?.title]);
 
   const openDashboard = React.useCallback(() => {
     if (!result?.id) return;
     window.open(`/analysis/${result.id}`, "_blank");
   }, [result?.id]);
 
-  // Flexible runner that tolerates backend payload shapes (camelCase/snake_case) and returns full error messages
+  /* تشغيل مرن: نحاول أكثر من شكل payload (camel/snake) */
   async function runAnalysisFlexible(
     jobId: string,
     cvId: string,
@@ -621,79 +648,41 @@ export default function AIConsole() {
       lang?: string;
     }
   ) {
-    const endpoint = "/api/analyses/run";
-    async function post(body: any) {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        let details = `${res.status}`;
-        try {
-          const data = await res.json();
-          details =
-            data?.message ||
-            data?.error ||
-            data?.detail ||
-            JSON.stringify(data);
-        } catch {
-          try {
-            details = await res.text();
-          } catch {}
-        }
-        const err = new Error(details || `HTTP ${res.status}`);
-        (err as any)._status = res.status;
-        (err as any)._body = body;
-        throw err;
-      }
-      return res.json();
-    }
-
     const payloads = [
-      // snake_case minimal
-      { job_id: jobId, cv_id: cvId },
-      // camelCase minimal
-      { jobId, cvId },
-      // snake_case verbose
-      { job_id: jobId, cv_id: cvId, ...extras },
-      // camelCase verbose
-      { jobId, cvId, ...extras },
+      { job_id: jobId, cv_id: cvId }, // snake
+      { jobId, cvId }, // camel
+      { job_id: jobId, cv_id: cvId, ...extras }, // snake +
+      { jobId, cvId, ...extras }, // camel +
     ];
-
-    let lastError: any;
+    let lastErr: Error | null = null;
     for (const p of payloads) {
       try {
-        return await post(p);
+        // http.post يضيف ORIGIN + /api تلقائياً
+        return await http.post<any>("/analyses/run", p);
       } catch (e: any) {
-        lastError = e;
-        if (e?._status !== 422) throw e; // other errors -> stop
-        // try next variant
+        lastErr = e;
+        // جرّب الشكل التالي
         // eslint-disable-next-line no-console
         console.warn(
-          "/api/analyses/run -> 422, retrying with alt payload",
-          p,
-          e?.message
+          "/analyses/run failed, trying next payload → ",
+          e?.message,
+          p
         );
       }
     }
-    throw lastError;
+    throw lastErr || new Error("Run failed");
   }
 
   const run = async () => {
-    if (loading) return; // prevent double submit
+    if (loading) return;
 
-    // If user forgot to press "Confirm requirements" but textarea has content
+    // لو المستخدم ما ضغط "اعتمد المتطلبات" لكن كتب في الـtextarea
     let currentReqs = reqs;
     if ((!currentReqs || currentReqs.length === 0) && reqText.trim()) {
       currentReqs = parseRequirements(reqText);
       setReqs(currentReqs);
     }
 
-    // Validate inputs
     if (!cvFile || !currentReqs.length) {
       push({
         role: "bot",
@@ -720,17 +709,25 @@ export default function AIConsole() {
     });
 
     try {
+      // 1) إنشاء الوظيفة
       const job = await jobsApi.create({
         title: title || (lang === "ar" ? "وظيفة بدون عنوان" : "Untitled Job"),
         description: description || "—",
         requirements: currentReqs,
       });
       setJobInfo(job);
+
+      // 2) رفع السيرة
       const uploaded = await cvApi.upload(cvFile);
       setCvInfo(uploaded);
 
-      // Use flexible runner to avoid 422 due to key casing
-      const a = await runAnalysisFlexible(job.id, uploaded.cvId);
+      // 3) تشغيل التحليل (تمرير extras يُساعد بعض السيرفرات)
+      const a = await runAnalysisFlexible(job.id, uploaded.cvId, {
+        requirements: currentReqs,
+        title,
+        description,
+        lang,
+      });
 
       push({
         role: "sys",
@@ -744,14 +741,13 @@ export default function AIConsole() {
         ),
       });
 
-      // Fetch analysis by id (support both shapes: {id} or {analysis: {id}})
       const analysisId: string = a?.id || a?.analysis?.id;
       if (!analysisId) throw new Error("Invalid response: analysis id missing");
-      const res2 = await fetch(`/api/analyses/${analysisId}`);
-      if (!res2.ok) throw new Error(await res2.text());
-      const final: Analysis = await res2.json();
 
+      // 4) جلب النتيجة عبر الـAPI الصحيح
+      const final = await analysesApi.get(analysisId);
       setResult(final);
+
       push({
         role: "bot",
         content: (
@@ -768,6 +764,7 @@ export default function AIConsole() {
         fileName: fileLabel || cvFile.name,
       });
 
+      // 5) عرض جدول مختصر + الفجوات بأمان
       push({
         role: "bot",
         content: (
@@ -780,6 +777,7 @@ export default function AIConsole() {
               {typeof final.score === "number" ? final.score.toFixed(2) : "-"} /
               10
             </div>
+
             {Array.isArray(final.breakdown) && (
               <div className="mt-3 max-h-56 overflow-auto rounded-2xl border border-black/10 dark:border-white/10">
                 <table className="w-full text-xs">
@@ -815,6 +813,7 @@ export default function AIConsole() {
                 </table>
               </div>
             )}
+
             {final.gaps && (
               <div className="mt-3 text-xs opacity-80 space-y-1">
                 <div>
@@ -836,6 +835,35 @@ export default function AIConsole() {
           </div>
         ),
       });
+
+      // (اختياري) ملخص الترتيب حتى لو CV واحد
+      try {
+        const pick = await analysesApi.pickBest({
+          jobId: job.id,
+          cvIds: [uploaded.cvId],
+          top: 1,
+        });
+        const summaryList = Array.isArray((pick as any).summary)
+          ? (pick as any).summary
+          : (pick as any).summary
+            ? [(pick as any).summary]
+            : [];
+        if (summaryList.length) {
+          push({
+            role: "bot",
+            content: (
+              <div className="mt-3 text-xs space-y-1">
+                <b>{lang === "ar" ? "ملخص الترتيب" : "Ranking summary"}</b>
+                <ul className="list-disc ps-5 opacity-80">
+                  {summaryList.map((s: string, i: number) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            ),
+          });
+        }
+      } catch {}
     } catch (error: any) {
       const message = error?.message || String(error);
       push({
@@ -853,6 +881,7 @@ export default function AIConsole() {
 
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="relative overflow-hidden rounded-[36px] border border-[var(--color-border)] bg-[var(--surface)]/95 px-6 py-8 shadow-[0_24px_70px_-32px_rgba(255,122,0,0.38)]">
         <div className="pointer-events-none absolute -left-24 -top-36 h-64 w-64 rounded-full bg-[var(--color-primary)]/12 blur-3xl" />
         <div className="pointer-events-none absolute -right-28 bottom-0 h-72 w-72 rounded-full bg-[var(--color-secondary)]/18 blur-[120px]" />
@@ -891,6 +920,7 @@ export default function AIConsole() {
         </div>
       </div>
 
+      {/* Steps nav */}
       <nav className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 px-4 py-4 shadow-sm">
         <ol className="grid gap-3 sm:grid-cols-4">
           {steps.map((step) => {
@@ -942,8 +972,10 @@ export default function AIConsole() {
       </nav>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
+        {/* Left side: steps content */}
         <div className="space-y-6">
           <AnimatePresence mode="wait">
+            {/* Step 1: Job profile */}
             {activeStep === 1 && (
               <motion.div
                 key="step1"
@@ -981,7 +1013,63 @@ export default function AIConsole() {
                       className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm text-[var(--foreground)] focus:border-[var(--color-primary)] focus:outline-none"
                     />
                   </label>
+
+                  {/* زر توليد المتطلبات من الوصف */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {lang === "ar"
+                        ? "استخدم وصفًا مختصرًا وسأحوله إلى متطلبات مع أوزان وجاهز للتحليل."
+                        : "Write a brief role summary and I’ll turn it into weighted requirements."}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fromDesc =
+                          extractRequirementsFromDescription(description);
+                        if (!fromDesc.length) {
+                          push({
+                            role: "bot",
+                            content: (
+                              <div className="text-sm text-amber-600">
+                                {lang === "ar"
+                                  ? "لم أستطع استخراج متطلبات من الوصف. أضف نقاطًا أو جُملاً أوضح."
+                                  : "Couldn’t extract requirements from the summary. Add clearer bullet points."}
+                              </div>
+                            ),
+                          });
+                          return;
+                        }
+                        setReqs(fromDesc);
+                        setReqText(
+                          fromDesc
+                            .map(
+                              (r) =>
+                                `${r.requirement}${r.mustHave ? ", must" : ""}, ${r.weight}`
+                            )
+                            .join("\n")
+                        );
+                        push({
+                          role: "bot",
+                          content: (
+                            <div className="text-sm">
+                              {lang === "ar"
+                                ? "تم توليد المتطلبات من الوصف ✅"
+                                : "Requirements generated from summary ✅"}
+                            </div>
+                          ),
+                        });
+                        goToStep(2);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white shadow"
+                    >
+                      {lang === "ar"
+                        ? "الشرح المتطلبات بالذكاء"
+                        : "Generate requirements"}
+                    </button>
+                  </div>
                 </div>
+
                 <div className="flex justify-end">
                   <button
                     onClick={() => goToStep(2)}
@@ -995,6 +1083,7 @@ export default function AIConsole() {
               </motion.div>
             )}
 
+            {/* Step 2: Requirements */}
             {activeStep === 2 && (
               <motion.div
                 key="step2"
@@ -1070,6 +1159,7 @@ export default function AIConsole() {
               </motion.div>
             )}
 
+            {/* Step 3: Upload & Run */}
             {activeStep === 3 && (
               <motion.div
                 key="step3"
@@ -1156,6 +1246,7 @@ export default function AIConsole() {
               </motion.div>
             )}
 
+            {/* Step 4: Results */}
             {activeStep === 4 && result && (
               <motion.div
                 key="step4"
@@ -1306,6 +1397,7 @@ export default function AIConsole() {
           </AnimatePresence>
         </div>
 
+        {/* Right side: sidebar */}
         <aside className="space-y-6">
           <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-5 shadow-sm">
             <div className="flex items-center justify-between">
