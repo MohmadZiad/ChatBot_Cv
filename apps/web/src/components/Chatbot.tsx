@@ -55,25 +55,29 @@ const createMsgId = () => Math.random().toString(36).slice(2);
 // Make riskCopy strongly typed
 const riskCopy = {
   must_threshold: {
-  ar: "لم تتجاوز متطلبات الـmust العتبة المطلوبة.",
-  en: "Must-have requirements remain below the acceptance threshold.",
+    ar: "لم تتجاوز متطلبات الـmust العتبة المطلوبة.",
+    en: "Must-have requirements remain below the acceptance threshold.",
   },
   low_total: {
-  ar: "النتيجة الكلية منخفضة — راجع المتطلبات الحساسة.",
-  en: "Overall score is low — review the critical requirements.",
+    ar: "النتيجة الكلية منخفضة — راجع المتطلبات الحساسة.",
+    en: "Overall score is low — review the critical requirements.",
   },
   no_requirements: {
-  ar: "لا توجد متطلبات كافية لتقييمها.",
-  en: "No requirements were provided for this analysis.",
+    ar: "لا توجد متطلبات كافية لتقييمها.",
+    en: "No requirements were provided for this analysis.",
   },
   no_text: {
-  ar: "لم يتم استخراج نص من السيرة الذاتية.",
-  en: "No text could be extracted from the CV.",
+    ar: "لم يتم استخراج نص من السيرة الذاتية.",
+    en: "No text could be extracted from the CV.",
   },
-  } as const;
-  
-  
-  type RiskFlag = keyof typeof riskCopy;
+} as const;
+
+type RiskFlag = keyof typeof riskCopy;
+
+const isRiskFlag = (value: string): value is RiskFlag => value in riskCopy;
+
+const getRiskLabel = (flag: string, lang: Lang) =>
+  isRiskFlag(flag) ? riskCopy[flag][lang] : flag;
 const toPercent = (value: number | null | undefined) => {
   const safe = Number.isFinite(value ?? NaN) ? Number(value) : 0;
   return `${Math.max(0, Math.min(100, safe)).toFixed(1)}%`;
@@ -444,7 +448,7 @@ export default function Chatbot() {
                 : Date.now();
               return { id, role, kind, text, payload, createdAt } satisfies Msg;
             })
-            .filter((entry): entry is Msg => Boolean(entry));
+            .filter((entry): entry is Msg => entry !== null);
           if (normalized.length) setMsgs(normalized.slice(-MAX_MESSAGES));
         }
       }
@@ -1236,15 +1240,18 @@ export default function Chatbot() {
                                     <span className="font-semibold text-[#b42318]">
                                       {tt("chat.risks")}
                                     </span>
-                                    {risks.map((flag) => (
-                                      <span
-                                        key={`risk-${flag}`}
-                                        className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
-                                      >
-                                        <AlertTriangle className="h-3.5 w-3.5" />
-                                        {riskCopy[flag]?.[lang] ?? flag}
-                                      </span>
-                                    ))}
+                                    {risks.map((flag) => {
+                                      const label = getRiskLabel(flag, lang);
+                                      return (
+                                        <span
+                                          key={`risk-${flag}`}
+                                          className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
+                                        >
+                                          <AlertTriangle className="h-3.5 w-3.5" />
+                                          {label}
+                                        </span>
+                                      );
+                                    })}
                                   </div>
                                 ) : null}
                                 {!missingMust.length &&
@@ -1581,12 +1588,18 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
 
         {summary.risks.length ? (
           <div className="flex flex-wrap gap-2 text-xs">
-            {summary.risks.map((flag) => (
-              <span key={`risk-${flag}`} className="inline-flex items-center gap-1 rounded-full bg-black/30 px-3 py-1">
-                <AlertTriangle className="h-3 w-3" />
-                {riskCopy[flag]?.[lang] ?? flag}
-              </span>
-            ))}
+            {summary.risks.map((flag) => {
+              const label = getRiskLabel(flag, lang);
+              return (
+                <span
+                  key={`risk-${flag}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-black/30 px-3 py-1"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  {label}
+                </span>
+              );
+            })}
           </div>
         ) : null}
       </div>
