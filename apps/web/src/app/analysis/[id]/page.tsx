@@ -180,6 +180,111 @@ export default function ResultDetail() {
   const params = useParams<{ id: string }>();
   const lang = useLang();
   const tt = useMemo(() => (key: string) => t(lang, key), [lang]);
+  const jobCopy = useMemo(
+    () =>
+      lang === "ar"
+        ? {
+            heading: "تفاصيل الوظيفة",
+            summaryFallback: "لا يوجد ملخص مختصر للوصف.",
+            level: "المستوى",
+            experience: "الخبرة المطلوبة",
+            contract: "نوع العقد",
+            location: "الموقع",
+            languages: "اللغات المطلوبة",
+            languagesLoading: "جارٍ تحليل اللغات...",
+            languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
+            aiTitle: "ملخص سريع بالذكاء الاصطناعي",
+            aiButton: "ولّد النقاط",
+            aiLoading: "جارٍ التوليد...",
+            aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
+            jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
+            jobError: "تعذّر تحميل تفاصيل الوظيفة.",
+            aiErrorPrefix: "تعذّر التوليد: ",
+          }
+        : {
+            heading: "Job overview",
+            summaryFallback: "No short summary was extracted.",
+            level: "Level",
+            experience: "Required experience",
+            contract: "Contract",
+            location: "Location",
+            languages: "Languages",
+            languagesLoading: "Detecting languages...",
+            languagesFallback: "No explicit languages were mentioned in the brief.",
+            aiTitle: "AI quick highlights",
+            aiButton: "Generate highlights",
+            aiLoading: "Generating...",
+            aiEmpty: "Click the button to generate three bullet highlights.",
+            jobLoading: "Loading job details...",
+            jobError: "Failed to load job details.",
+            aiErrorPrefix: "Could not generate: ",
+          },
+    [lang]
+  );
+
+  const jobCopy = useMemo(
+    () =>
+      lang === "ar"
+        ? {
+            heading: "تفاصيل الوظيفة",
+            summaryFallback: "لا يوجد ملخص مختصر للوصف.",
+            level: "المستوى",
+            experience: "الخبرة المطلوبة",
+            contract: "نوع العقد",
+            location: "الموقع",
+            languages: "اللغات المطلوبة",
+            languagesLoading: "جارٍ تحليل اللغات...",
+            languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
+            aiTitle: "ملخص سريع بالذكاء الاصطناعي",
+            aiButton: "ولّد النقاط",
+            aiRegenerate: "إعادة التوليد",
+            aiCopy: "نسخ",
+            aiLoading: "جارٍ التوليد...",
+            aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
+            jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
+            jobError: "تعذّر تحميل تفاصيل الوظيفة.",
+            aiErrorPrefix: "تعذّر التوليد: ",
+            coachTitle: "مساعد التحسين",
+            coachButton: "حلّل السيرة",
+            coachRegenerate: "تحليل جديد",
+            coachCopy: "انسخ",
+            coachEmpty: "اضغط للحصول على تحسينات ذكية بناءً على هذه السيرة.",
+            coachLoading: "نحلّل السيرة...",
+            coachError: "تعذّر توليد التحسينات.",
+            relatedTitle: "مقارنة التحليلات",
+            relatedEmpty: "لم يتم تشغيل تحليلات أخرى لهذه الوظيفة بعد.",
+          }
+        : {
+            heading: "Job overview",
+            summaryFallback: "No short summary was extracted.",
+            level: "Level",
+            experience: "Required experience",
+            contract: "Contract",
+            location: "Location",
+            languages: "Languages",
+            languagesLoading: "Detecting languages...",
+            languagesFallback: "No explicit languages were mentioned in the brief.",
+            aiTitle: "AI quick highlights",
+            aiButton: "Generate",
+            aiRegenerate: "Regenerate",
+            aiCopy: "Copy",
+            aiLoading: "Generating...",
+            aiEmpty: "Tap the button to receive three laser-focused bullets.",
+            jobLoading: "Loading job details...",
+            jobError: "Failed to load job details.",
+            aiErrorPrefix: "Could not generate: ",
+            coachTitle: "AI coach",
+            coachButton: "Analyse CV",
+            coachRegenerate: "Regenerate",
+            coachCopy: "Copy",
+            coachEmpty: "Launch the coach to receive actionable improvements for this CV.",
+            coachLoading: "Thinking through the CV...",
+            coachError: "Could not fetch improvement tips.",
+            relatedTitle: "Comparison",
+            relatedEmpty: "No other analyses exist for this job yet.",
+          },
+    [lang],
+  );
 
   const jobCopy = useMemo(
     () =>
@@ -248,6 +353,133 @@ export default function ResultDetail() {
   const [data, setData] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
+  const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
+  const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
+  const [aiLanguages, setAiLanguages] = useState<string[]>([]);
+  const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
+  const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
+  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
+  const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
+  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
+  const [quickSummary, setQuickSummary] = useState<string[]>([]);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickLoading, setQuickLoading] = useState(false);
+
+  const fallbackLanguages = useMemo(() => {
+    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
+    if (!chunks.length) return [] as string[];
+    return detectLanguages(chunks.join("\n"));
+  }, [job?.description, jobFields?.notes]);
+
+  const displayLanguages = useMemo(() => {
+    const sourceMap = new Map<string, string>();
+    (jobFields?.languages ?? []).forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "structured");
+    });
+    aiLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "assistant");
+    });
+    fallbackLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "detected");
+    });
+    return Array.from(sourceMap.entries()).map(([label, source]) => ({
+      label,
+      source,
+    }));
+  }, [aiLanguages, fallbackLanguages, jobFields?.languages]);
+
+  const languageSourceCopy = useMemo(
+    () => ({
+      structured: lang === "ar" ? "من الحقول" : "JD",
+      assistant: lang === "ar" ? "ذكاء" : "AI",
+      detected: lang === "ar" ? "مكتشف" : "Detected",
+    }),
+    [lang],
+  );
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
+  const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
+  const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
+  const [aiLanguages, setAiLanguages] = useState<string[]>([]);
+  const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
+  const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
+  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
+  const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
+  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
+  const [quickSummary, setQuickSummary] = useState<string[]>([]);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickCopied, setQuickCopied] = useState(false);
+
+  const [relatedAnalyses, setRelatedAnalyses] = useState<Analysis[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
+
+  const [coach, setCoach] = useState<{ summary: string; suggestions: string[] } | null>(null);
+  const [coachError, setCoachError] = useState<string | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachCopied, setCoachCopied] = useState(false);
+
+  const relatedList = useMemo(() => {
+    if (!relatedAnalyses.length) return [];
+    return relatedAnalyses
+      .filter((item) => item.id && item.id !== (data?.id ?? ""))
+      .sort(
+        (a, b) => (Number(b.score ?? 0) || 0) - (Number(a.score ?? 0) || 0),
+      )
+      .slice(0, 4);
+  }, [data?.id, relatedAnalyses]);
+
+  const fallbackLanguages = useMemo(() => {
+    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
+    if (!chunks.length) return [] as string[];
+    return detectLanguages(chunks.join("\n"));
+  }, [job?.description, jobFields?.notes]);
+
+  const displayLanguages = useMemo(() => {
+    const sourceMap = new Map<string, { source: string }>();
+    (jobFields?.languages ?? []).forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      sourceMap.set(label, { source: "structured" });
+    });
+    aiLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, { source: "assistant" });
+    });
+    fallbackLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, { source: "detected" });
+    });
+    return Array.from(sourceMap.entries()).map(([label, payload]) => ({
+      label,
+      source: payload.source,
+    }));
+  }, [aiLanguages, fallbackLanguages, jobFields?.languages]);
+
+  const languageSourceCopy = useMemo(
+    () => ({
+      structured: lang === "ar" ? "من الحقول" : "JD",
+      assistant: lang === "ar" ? "ذكاء" : "AI",
+      detected: lang === "ar" ? "مكتشف" : "Detected",
+    }),
+    [lang],
+  );
 
   const [job, setJob] = useState<Job | null>(null);
   const [jobLoading, setJobLoading] = useState(false);
