@@ -15,6 +15,7 @@ import { jobsApi, type Job } from "@/services/api/jobs";
 import {
   assistantApi,
   type ExtractedJobFields,
+  type ExperienceExtract,
 } from "@/services/api/assistant";
 import { Button } from "@/components/ui/Button";
 import { t } from "@/lib/i18n";
@@ -125,6 +126,12 @@ export default function ResultDetail() {
   const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
   const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
   const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
+  const [aiLanguages, setAiLanguages] = useState<string[]>([]);
+  const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
+  const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
+  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
+  const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
+  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
   const [quickSummary, setQuickSummary] = useState<string[]>([]);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickLoading, setQuickLoading] = useState(false);
@@ -174,6 +181,8 @@ export default function ResultDetail() {
     if (!job?.description?.trim()) {
       setJobFields(null);
       setQuickSummary([]);
+      setAiLanguages([]);
+      setAiExperience(null);
       return;
     }
     let alive = true;
@@ -197,6 +206,58 @@ export default function ResultDetail() {
       alive = false;
     };
   }, [job?.id, job?.description]);
+
+  useEffect(() => {
+    if (!job?.description?.trim()) return;
+    if (jobFieldsLoading) return;
+    if (jobFields?.languages?.length) return;
+    let alive = true;
+    setAiLanguagesLoading(true);
+    setAiLanguagesError(null);
+    assistantApi
+      .languages(job.description)
+      .then((res) => {
+        if (!alive) return;
+        setAiLanguages(Array.isArray(res.languages) ? res.languages : []);
+      })
+      .catch((err: any) => {
+        if (!alive) return;
+        setAiLanguagesError(err?.message || "failed to detect languages");
+        setAiLanguages([]);
+      })
+      .finally(() => {
+        if (alive) setAiLanguagesLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [job?.description, jobFields?.languages?.length, jobFieldsLoading]);
+
+  useEffect(() => {
+    if (!job?.description?.trim()) return;
+    if (jobFieldsLoading) return;
+    if (jobFields?.required_experience_years?.trim()) return;
+    let alive = true;
+    setAiExperienceLoading(true);
+    setAiExperienceError(null);
+    assistantApi
+      .experience(job.description)
+      .then((res) => {
+        if (!alive) return;
+        setAiExperience(res);
+      })
+      .catch((err: any) => {
+        if (!alive) return;
+        setAiExperienceError(err?.message || "failed to extract experience");
+        setAiExperience(null);
+      })
+      .finally(() => {
+        if (alive) setAiExperienceLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [job?.description, jobFields?.required_experience_years, jobFieldsLoading]);
 
   const handleQuickSummary = async () => {
     if (!job?.description?.trim()) return;
@@ -252,6 +313,34 @@ export default function ResultDetail() {
   const evidence = data.evidence?.slice(0, 4) ?? [];
   const generatedAt = formatDate(metrics?.generatedAt ?? data.updatedAt, lang);
   const scoreValue = Number(data.score ?? metrics?.weightedScore ?? 0);
+  const combinedLanguages =
+    jobFields?.languages?.length
+      ? jobFields.languages
+      : aiLanguages.length
+        ? aiLanguages
+        : [];
+  const combinedExperience =
+    jobFields?.required_experience_years?.trim() ||
+    aiExperience?.required_experience_years?.trim() ||
+    "";
+  const experienceDetail =
+    jobFields?.notes?.trim() || aiExperience?.experience_detail?.trim() || "";
+  const languagesLoading =
+    jobFieldsLoading ||
+    (!jobFields?.languages?.length && aiLanguagesLoading);
+  const languagesError =
+    jobFields?.languages?.length
+      ? null
+      : jobFieldsError || aiLanguagesError;
+  const experienceLoading =
+    jobFieldsLoading ||
+    (!jobFields?.required_experience_years?.trim() && aiExperienceLoading);
+  const experienceError =
+    jobFields?.required_experience_years?.trim()
+      ? null
+      : jobFieldsError || aiExperienceError;
+  const experienceLoadingLabel =
+    lang === "ar" ? "جارٍ استخراج الخبرة..." : "Extracting experience...";
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 py-8">
@@ -317,8 +406,27 @@ export default function ResultDetail() {
                   {jobCopy.experience}
                 </div>
                 <div className="text-base font-semibold text-[#D85E00] dark:text-white">
-                  {jobFields?.required_experience_years?.trim() || "—"}
+                  {experienceLoading ? (
+                    <span className="inline-flex items-center gap-2 text-xs font-normal text-[#2F3A4A]/60 dark:text-white/60">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {experienceLoadingLabel}
+                    </span>
+                  ) : combinedExperience ? (
+                    combinedExperience
+                  ) : (
+                    "—"
+                  )}
                 </div>
+                {experienceDetail ? (
+                  <div className="mt-1 text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
+                    {experienceDetail}
+                  </div>
+                ) : null}
+                {experienceError && !experienceLoading ? (
+                  <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                    {experienceError}
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-[#FFB26B]/50 bg-white/70 px-4 py-3 text-sm dark:border-white/20 dark:bg-white/5">
                 <div className="text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
@@ -347,17 +455,17 @@ export default function ResultDetail() {
             <div className="text-[11px] uppercase tracking-[0.3em] text-[#2F3A4A]/60 dark:text-white/60">
               {jobCopy.languages}
             </div>
-            {jobFieldsLoading ? (
+            {languagesLoading ? (
               <div className="mt-3 flex items-center gap-2 text-xs text-[#2F3A4A]/60 dark:text-white/60">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> {jobCopy.languagesLoading}
               </div>
-            ) : jobFieldsError ? (
+            ) : languagesError ? (
               <div className="mt-3 rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-xs text-red-700">
-                {jobFieldsError}
+                {languagesError}
               </div>
-            ) : jobFields?.languages?.length ? (
+            ) : combinedLanguages.length ? (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                {jobFields.languages.map((item) => (
+                {combinedLanguages.map((item) => (
                   <span
                     key={item}
                     className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] dark:bg-white/10 dark:text-white/80"
