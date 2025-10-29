@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import ScoreGauge from "./ui/ScoreGauge";
 import { useSWRLite } from "@/hooks/useSWRLite";
-import { t, type Lang } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { useLang } from "@/lib/use-lang";
 import { cvApi, type CV } from "@/services/api/cv";
 import { jobsApi, type Job, type JobRequirement } from "@/services/api/jobs";
@@ -46,10 +46,6 @@ type Msg = {
   payload?: any;
   createdAt: number;
 };
-
-type ToastTone = "success" | "error" | "info";
-
-type ToastMessage = { id: string; text: string; tone: ToastTone };
 
 const CHAT_STORAGE_KEY = "cv-chat-history-v3";
 const MAX_MESSAGES = 60;
@@ -201,6 +197,8 @@ export default function Chatbot() {
   const [savingJob, setSavingJob] = useState(false);
   const [copied, setCopied] = useState(false);
   const [typing, setTyping] = useState(false);
+  type ToastTone = "success" | "error" | "info";
+  type ToastMessage = { id: string; text: string; tone: ToastTone };
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef<Record<string, number>>({});
 
@@ -426,19 +424,20 @@ export default function Chatbot() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          const normalized = parsed.reduce<Msg[]>((acc, item: any) => {
-            if (!item || !item.role) return acc;
-            const role = (item.role as MsgRole) ?? "bot";
-            const kind = (item.kind as MsgKind) ?? "text";
-            const text = typeof item.text === "string" ? item.text : undefined;
-            const payload = item.payload ?? undefined;
-            const id = typeof item.id === "string" ? item.id : createMsgId();
-            const createdAt = Number.isFinite(item?.createdAt)
-              ? Number(item.createdAt)
-              : Date.now();
-            acc.push({ id, role, kind, text, payload, createdAt });
-            return acc;
-          }, []);
+          const normalized = parsed
+            .map((item: any) => {
+              if (!item || !item.role) return null;
+              const role = (item.role as MsgRole) ?? "bot";
+              const kind = (item.kind as MsgKind) ?? "text";
+              const text = typeof item.text === "string" ? item.text : undefined;
+              const payload = item.payload ?? undefined;
+              const id = typeof item.id === "string" ? item.id : createMsgId();
+              const createdAt = Number.isFinite(item?.createdAt)
+                ? Number(item.createdAt)
+                : Date.now();
+              return { id, role, kind, text, payload, createdAt } satisfies Msg;
+            })
+            .filter((entry): entry is Msg => Boolean(entry));
           if (normalized.length) setMsgs(normalized.slice(-MAX_MESSAGES));
         }
       }
@@ -1448,7 +1447,7 @@ function TypingIndicator({ lang }: TypingIndicatorProps) {
 type AnalysisCardProps = {
   analysis: Analysis;
   job: Job | null;
-  lang: Lang;
+  lang: string;
 };
 
 function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
@@ -1594,7 +1593,7 @@ type ComparisonCardProps = {
     insights?: string[];
     meta?: Array<{ id: string; name: string; createdAt: string | null; lang?: string | null }>;
   };
-  lang: Lang;
+  lang: string;
 };
 
 function ComparisonCard({ data, lang }: ComparisonCardProps) {
@@ -1735,7 +1734,7 @@ type ImprovementCardProps = {
     top?: Array<{ cvId: string; fileName: string; score: number }>;
     targetCv?: { id: string; name: string };
   };
-  lang: Lang;
+  lang: string;
 };
 
 function ImprovementCard({ data, lang }: ImprovementCardProps) {
@@ -1827,7 +1826,7 @@ function ImprovementCard({ data, lang }: ImprovementCardProps) {
 type ToastStackProps = {
   items: ToastMessage[];
   onDismiss: (id: string) => void;
-  lang: Lang;
+  lang: string;
 };
 
 function ToastStack({ items, onDismiss, lang }: ToastStackProps) {
