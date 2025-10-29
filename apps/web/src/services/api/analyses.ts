@@ -89,35 +89,41 @@ type RawAnalysis = Partial<Analysis> & {
 
 function normalizeBreakdown(input: unknown): PerRequirement[] {
   if (!Array.isArray(input)) return [];
-  return input
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const record = entry as Record<string, unknown>;
-      const similarity = toNumber(record.similarity);
-      const score10 = toNumber(record.score10 ?? similarity * 10);
-      const bestChunkIdRaw = record.bestChunkId;
-      const bestChunkId =
-        bestChunkIdRaw === null || bestChunkIdRaw === undefined
-          ? null
-          : toNumber(bestChunkIdRaw);
+  const rows: Array<PerRequirement | null> = input.map((entry) => {
+    if (!entry || typeof entry !== "object") return null;
+    const record = entry as Record<string, unknown>;
+    const similarity = toNumber(record.similarity);
+    const score10 = toNumber(record.score10 ?? similarity * 10);
+    const bestChunkIdRaw = record.bestChunkId;
+    const bestChunkId =
+      bestChunkIdRaw === null || bestChunkIdRaw === undefined
+        ? null
+        : toNumber(bestChunkIdRaw);
 
-      return {
-        requirement: String(record.requirement ?? ""),
-        mustHave: Boolean(record.mustHave),
-        weight: toNumber(record.weight, 1),
-        similarity,
-        score10,
-        bestChunkId,
-        bestChunk: record.bestChunk && typeof record.bestChunk === "object"
+    const row = {
+      requirement: String(record.requirement ?? ""),
+      mustHave: Boolean(record.mustHave),
+      weight: toNumber(record.weight, 1),
+      similarity,
+      score10,
+      bestChunkId,
+      bestChunk:
+        record.bestChunk && typeof record.bestChunk === "object"
           ? {
               id: toNumber((record.bestChunk as any).id),
               section: String((record.bestChunk as any).section ?? ""),
               excerpt: String((record.bestChunk as any).excerpt ?? ""),
             }
           : null,
-      } satisfies PerRequirement;
-    })
-    .filter((item): item is PerRequirement => Boolean(item?.requirement));
+    } satisfies PerRequirement;
+
+    return row;
+  });
+
+  // نزيل null ونحوّل النوع إلى PerRequirement[]
+  return rows.filter(
+    (item): item is PerRequirement => !!item && !!item.requirement
+  );
 }
 
 function normalizeMetrics(
@@ -158,13 +164,13 @@ function normalizeMetrics(
     missingMust:
       toStringArray(record.missingMust).length > 0
         ? toStringArray(record.missingMust)
-        : fallback?.mustHaveMissing ?? [],
+        : (fallback?.mustHaveMissing ?? []),
     improvement:
       toStringArray(record.improvement).length > 0
         ? toStringArray(record.improvement)
         : toStringArray((record as any).improve).length > 0
           ? toStringArray((record as any).improve)
-          : fallback?.improve ?? [],
+          : (fallback?.improve ?? []),
     topStrengths: topStrengthsRaw
       .map((item) => {
         if (!item || typeof item !== "object") return null;
@@ -175,8 +181,9 @@ function normalizeMetrics(
           similarity: toNumber(row.similarity, 0),
         };
       })
-      .filter((item): item is AnalysisMetrics["topStrengths"][number] =>
-        Boolean(item?.requirement)
+      .filter(
+        (item): item is AnalysisMetrics["topStrengths"][number] =>
+          !!item && !!item.requirement
       ),
     riskFlags: toStringArray(record.riskFlags),
     generatedAt: record.generatedAt ? String(record.generatedAt) : undefined,
@@ -213,24 +220,26 @@ function normalizeGaps(
 
 function normalizeEvidence(input: unknown): EvidenceItem[] | null {
   if (!Array.isArray(input)) return null;
-  const rows = input
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const record = entry as Record<string, unknown>;
-      if (!record.requirement || !record.chunk) return null;
-      const chunk = record.chunk as Record<string, unknown>;
-      return {
-        requirement: String(record.requirement ?? ""),
-        chunk: {
-          id: toNumber(chunk.id, 0),
-          section: String(chunk.section ?? ""),
-          excerpt: String(chunk.excerpt ?? ""),
-        },
-        similarity: toNumber(record.similarity, 0),
-      };
-    })
-    .filter((item): item is EvidenceItem => Boolean(item?.requirement));
-  return rows.length ? rows : null;
+  const rows: Array<EvidenceItem | null> = input.map((entry) => {
+    if (!entry || typeof entry !== "object") return null;
+    const record = entry as Record<string, unknown>;
+    if (!record.requirement || !record.chunk) return null;
+    const chunk = record.chunk as Record<string, unknown>;
+    return {
+      requirement: String(record.requirement ?? ""),
+      chunk: {
+        id: toNumber(chunk.id, 0),
+        section: String(chunk.section ?? ""),
+        excerpt: String(chunk.excerpt ?? ""),
+      },
+      similarity: toNumber(record.similarity, 0),
+    };
+  });
+
+  const cleaned = rows.filter(
+    (item): item is EvidenceItem => !!item && !!item.requirement
+  );
+  return cleaned.length ? cleaned : null;
 }
 
 export function normalizeAnalysis(input: RawAnalysis): Analysis {
@@ -244,15 +253,18 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
     jobId: String(input.jobId ?? ""),
     cvId: String(input.cvId ?? ""),
     status: String(input.status ?? "unknown"),
-    score: input.score === null || input.score === undefined
-      ? metrics?.weightedScore ?? null
-      : toNumber(input.score),
+    score:
+      input.score === null || input.score === undefined
+        ? (metrics?.weightedScore ?? null)
+        : toNumber(input.score),
     breakdown,
     gaps,
     metrics,
     evidence: normalizeEvidence(input.evidence),
     model: input.model ? String(input.model) : null,
-    createdAt: input.createdAt ? String(input.createdAt) : new Date().toISOString(),
+    createdAt: input.createdAt
+      ? String(input.createdAt)
+      : new Date().toISOString(),
     updatedAt: input.updatedAt ? String(input.updatedAt) : null,
   };
 }
@@ -264,8 +276,9 @@ function normalizeList(list: RawAnalysis[] | undefined | null): Analysis[] {
 
 function normalizeImprove(input: any): ImproveResponse {
   const suggestions = Array.isArray(input?.suggestions)
-    ? input.suggestions.filter((item: unknown): item is string =>
-        typeof item === "string" && item.trim().length > 0
+    ? input.suggestions.filter(
+        (item: unknown): item is string =>
+          typeof item === "string" && item.trim().length > 0
       )
     : [];
 
