@@ -67,13 +67,14 @@ export async function ensureCvEmbeddings(cvId: string) {
     // تخزين كل متجه (pgvector) + وسم hasEmbedding
     for (let k = 0; k < slice.length; k++) {
       const id = slice[k].id as unknown as number | bigint;
-      const v = vecs[k];
+      const raw = vecs[k];
+      const vector = normalizeVector(raw);
 
-      if (!Array.isArray(v) || (DIM && v.length !== DIM)) continue;
+      if (!vector.length || (DIM && vector.length !== DIM)) continue;
 
       // embedding = ARRAY[...]::vector
       await prisma.$executeRawUnsafe(
-        `UPDATE "CVChunk" SET "embedding" = ${toVectorSQL(v)} WHERE id = $1`,
+        `UPDATE "CVChunk" SET "embedding" = ${toVectorSQL(vector)} WHERE id = $1`,
         id
       );
 
@@ -99,4 +100,20 @@ function toVectorSQL(vec: number[]) {
 }
 function toArraySql(vec: number[]) {
   return `ARRAY[${vec.join(",")}]`;
+}
+
+function normalizeVector(value: unknown): number[] {
+  if (Array.isArray(value)) return value.map((num) => Number(num) || 0);
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { length?: number }).length === "number"
+  ) {
+    try {
+      return Array.from(value as ArrayLike<number>, (num) => Number(num) || 0);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }

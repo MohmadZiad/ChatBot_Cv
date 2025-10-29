@@ -1019,23 +1019,6 @@ export default function TalentWorkflow() {
     );
   }, []);
 
-  React.useEffect(() => {
-    if (mustSkills.length || niceSkills.length) return;
-    const text = jobDescription.trim();
-    if (!text) {
-      setAutoSuggestStatus("idle");
-      autoSuggestKeyRef.current = "";
-      return;
-    }
-    if (text.length < 40) return;
-
-    const handle = window.setTimeout(() => {
-      void runAutoSuggest("watch");
-    }, 800);
-
-    return () => window.clearTimeout(handle);
-  }, [jobDescription, mustSkills.length, niceSkills.length, runAutoSuggest]);
-
   const buildRequirementsFromState = React.useCallback((): JobRequirement[] => {
     return [
       ...mustSkills.map((req) => ({
@@ -1136,6 +1119,23 @@ export default function TalentWorkflow() {
       autoSuggestStatus,
     ]
   );
+
+  React.useEffect(() => {
+    if (mustSkills.length || niceSkills.length) return;
+    const text = jobDescription.trim();
+    if (!text) {
+      setAutoSuggestStatus("idle");
+      autoSuggestKeyRef.current = "";
+      return;
+    }
+    if (text.length < 40) return;
+
+    const handle = window.setTimeout(() => {
+      void runAutoSuggest("watch");
+    }, 800);
+
+    return () => window.clearTimeout(handle);
+  }, [jobDescription, mustSkills.length, niceSkills.length, runAutoSuggest]);
 
   const ensureJob = React.useCallback(async () => {
     if (jobId) return jobId;
