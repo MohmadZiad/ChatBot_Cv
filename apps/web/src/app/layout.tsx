@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Topbar from "@/components/ui/Topbar";
 import Chatbot from "@/components/Chatbot";
+import SplashScreen from "@/components/ui/SplashScreen";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -56,6 +57,7 @@ export default function RootLayout({
           <div className="absolute -top-32 -end-32 h-[420px] w-[420px] rounded-full bg-[#FFB26B]/40 blur-3xl" />
           <div className="absolute -bottom-40 -start-20 h-[520px] w-[520px] rounded-full bg-[#FF7A00]/20 blur-[160px]" />
         </div>
+        <SplashScreen />
         <Topbar />
         <main className="relative mx-auto max-w-6xl px-4 pb-16 pt-8 sm:px-6 lg:px-8">
           {children}
