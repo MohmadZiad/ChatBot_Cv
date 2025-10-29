@@ -358,9 +358,6 @@ export default function AIConsole() {
   const [assistantTemplate, setAssistantTemplate] = React.useState<RequirementsTemplate | null>(null);
   const [candidateProfile, setCandidateProfile] = React.useState("");
   const [candidateHelperResult, setCandidateHelperResult] = React.useState<CandidateHelper | null>(null);
-  const [promptFeedback, setPromptFeedback] = React.useState<
-    { id: string; kind: "copy" | "insert" } | null
-  >(null);
   const autoExtractSignature = React.useRef<string>("");
 
   const [activeStep, setActiveStep] = React.useState(1);
@@ -531,10 +528,7 @@ export default function AIConsole() {
 
   const handleAssistantExtract = React.useCallback(() => {
     runAssistant("extract", async () => {
-      const res = await assistantApi.extractFields(
-        jobDescriptionForAssistant,
-        lang
-      );
+      const res = await assistantApi.extractFields(jobDescriptionForAssistant);
       setAssistantFields(res);
       setAssistantLanguages({
         languages: Array.isArray(res.languages) ? res.languages : [],
@@ -561,55 +555,42 @@ export default function AIConsole() {
 
   const handleAssistantTitle = React.useCallback(() => {
     runAssistant("title", async () => {
-      const res = await assistantApi.titleSummary(
-        jobDescriptionForAssistant,
-        lang
-      );
+      const res = await assistantApi.titleSummary(jobDescriptionForAssistant);
       setAssistantTitleSummary(res);
     });
   }, [jobDescriptionForAssistant, runAssistant]);
 
   const handleAssistantQuickSummary = React.useCallback(() => {
     runAssistant("quick", async () => {
-      const res = await assistantApi.quickSuggestions(
-        lang === "ar" ? "ملخص" : "summary",
-        jobDescriptionForAssistant,
-        lang
-      );
+      const res = await assistantApi.quickSuggestions("ملخص", jobDescriptionForAssistant);
       setAssistantQuickPoints(parseAssistantLines(res.output).slice(0, 6));
     });
   }, [jobDescriptionForAssistant, parseAssistantLines, runAssistant]);
 
   const handleAssistantLanguages = React.useCallback(() => {
     runAssistant("languages", async () => {
-      const res = await assistantApi.languages(jobDescriptionForAssistant, lang);
+      const res = await assistantApi.languages(jobDescriptionForAssistant);
       setAssistantLanguages(res);
     });
   }, [jobDescriptionForAssistant, runAssistant]);
 
   const handleAssistantExperience = React.useCallback(() => {
     runAssistant("experience", async () => {
-      const res = await assistantApi.experience(jobDescriptionForAssistant, lang);
+      const res = await assistantApi.experience(jobDescriptionForAssistant);
       setAssistantExperience(res);
     });
   }, [jobDescriptionForAssistant, runAssistant]);
 
   const handleAssistantRequirements = React.useCallback(() => {
     runAssistant("requirements", async () => {
-      const res = await assistantApi.suggestRequirements(
-        jobDescriptionForAssistant,
-        lang
-      );
+      const res = await assistantApi.suggestRequirements(jobDescriptionForAssistant);
       setAssistantSuggested(res);
     });
   }, [jobDescriptionForAssistant, runAssistant]);
 
   const handleAssistantTemplate = React.useCallback(() => {
     runAssistant("template", async () => {
-      const res = await assistantApi.requirementsTemplate(
-        jobDescriptionForAssistant,
-        lang
-      );
+      const res = await assistantApi.requirementsTemplate(jobDescriptionForAssistant);
       setAssistantTemplate(res);
     });
   }, [jobDescriptionForAssistant, runAssistant]);
@@ -668,8 +649,7 @@ export default function AIConsole() {
     runAssistant("candidate", async () => {
       const res = await assistantApi.candidateHelper(
         candidateProfile,
-        jobDescriptionForAssistant,
-        lang
+        jobDescriptionForAssistant
       );
       setCandidateHelperResult(res);
     });
@@ -689,12 +669,6 @@ export default function AIConsole() {
     }, 800);
     return () => window.clearTimeout(timer);
   }, [assistantLoading, handleAssistantExtract, jobDescriptionForAssistant]);
-
-  React.useEffect(() => {
-    if (!promptFeedback) return;
-    const timer = window.setTimeout(() => setPromptFeedback(null), 2000);
-    return () => window.clearTimeout(timer);
-  }, [promptFeedback]);
 
   const assistantLanguagesList =
     assistantLanguages?.languages?.length
@@ -748,115 +722,6 @@ export default function AIConsole() {
     if (!entry) return lang === "ar" ? "جارٍ استخدام المساعد..." : "Running assistant...";
     return lang === "ar" ? entry.ar : entry.en;
   }, [assistantLoading, lang]);
-  const blueprintLines = React.useMemo(
-    () =>
-      lang === "ar"
-        ? [
-            "أطلِب دائمًا من الـAI أن يُرجع النتيجة بهذا الشكل فقط:",
-            "2) برومبت استخراج المتطلبات من JD.",
-            "انسخ البرومبت كما هو وألصقه قبل الـJD.",
-            "ضع العناصر بصياغات قصيرة قابلة للبحث (ATS keywords).",
-            "4) قوالب اقتراحات جاهزة (Auto-suggest).",
-            "7) اختصار للاستخدام السريع (Prompt Macro).",
-            "7) اختصار للاستخدام السريع (Prompt Macro).",
-          ]
-        : [
-            "Always ask the AI to return the result using this exact layout:",
-            "2) Requirements extraction prompt from the JD.",
-            "Copy the prompt as-is and paste it before the JD.",
-            "Keep items short and searchable (ATS keywords).",
-            "4) Ready-made auto-suggest templates.",
-            "7) Quick-use shortcut (Prompt Macro).",
-            "7) Quick-use shortcut (Prompt Macro).",
-          ],
-    [lang]
-  );
-  const extractionPrompt = React.useMemo(
-    () =>
-      lang === "ar"
-        ? "حلل توصيف الوظيفة التالي واستخرج المتطلبات في قوائم مختصرة قابلة للبحث (ATS keywords).\nقسّم النتيجة إلى قسمين:\n1) متطلبات أساسية (Must-have) — استخدم الصيغة \"- المهارة • w2\" لكل عنصر.\n2) مهارات إضافية (Nice-to-have) — استخدم الصيغة \"- المهارة • w1\" لكل عنصر.\nلا تضف أي شرح إضافي.\nJD:\n"
-        : "Analyse the following job description and extract concise, searchable requirements (ATS keywords).\nReturn two sections:\n1) Must-have requirements — format each line as \"- skill • w2\".\n2) Nice-to-have requirements — format each line as \"- skill • w1\".\nDo not add any commentary.\nJD:\n",
-    [lang]
-  );
-  const autoSuggestPrompt = React.useMemo(
-    () =>
-      lang === "ar"
-        ? "بناءً على توصيف الوظيفة التالي، أنشئ قالب متطلبات جاهزاً من عمودين: العمود الأيسر للمتطلبات الأساسية (Must-have) مع الصيغة \"- المهارة • w2\"، والعمود الأيمن للمهارات الإضافية (Nice-to-have) مع الصيغة \"- المهارة • w1\". اجعل كل عنصر كلمة أو كلمتين قابلة للبحث ومرر النتيجة بحيث يمكن نسخها مباشرة.\nJD:\n"
-        : "Using the following job description, craft a ready-to-use two-column requirements template: left column for must-have items (format \"- skill • w2\") and right column for nice-to-have items (format \"- skill • w1\"). Keep every item one or two searchable keywords and output a clean template that can be copied instantly.\nJD:\n",
-    [lang]
-  );
-  const promptMacros = React.useMemo(
-    () =>
-      lang === "ar"
-        ? [
-            {
-              id: "macro-standard",
-              title: "اختصار المخرجات القياسية",
-              description: "يثبّت شكل الرد على مخطط المخرجات القياسي.",
-              content:
-                "أجب باستخدام مخطط المخرجات القياسي فقط:\n1) متطلبات أساسية (Must-have)\n- المهارة • w2\n2) مهارات إضافية (Nice-to-have)\n- المهارة • w1\n3) ملاحظات سريعة\n- نقطة\n- نقطة\nJD:\n",
-            },
-            {
-              id: "macro-quickwins",
-              title: "اختصار التحسين السريع",
-              description: "يولّد أهم فجوتين وتحسينين سريعين للمرشح.",
-              content:
-                "حلل توصيف الوظيفة وحدد أهم فجوتين تؤثران على ترشيح المرشح. بعد ذلك اقترح تحسينين سريعين بصياغة نقاط قصيرة قابلة للتنفيذ. استخدم نفس لغة الواجهة الحالية وقدّم النتيجة ضمن مخطط المخرجات القياسي إن أمكن.\nJD:\n",
-            },
-          ]
-        : [
-            {
-              id: "macro-standard",
-              title: "Standard layout macro",
-              description: "Locks the response to the standard output blueprint.",
-              content:
-                "Respond using only this standard layout:\n1) Must-have requirements\n- skill • w2\n2) Nice-to-have requirements\n- skill • w1\n3) Quick notes\n- bullet\n- bullet\nJD:\n",
-            },
-            {
-              id: "macro-quickwins",
-              title: "Quick wins macro",
-              description: "Highlights the key gaps and two fast improvements.",
-              content:
-                "Analyse the job description, surface the top two gaps blocking the candidate, then propose two actionable quick wins as short bullets. Use the interface language and stick to the standard output blueprint when possible.\nJD:\n",
-            },
-          ],
-    [lang]
-  );
-  const feedbackCopyText =
-    lang === "ar" ? "تم النسخ إلى الحافظة." : "Prompt copied to clipboard.";
-  const feedbackInsertText =
-    lang === "ar"
-      ? "تم إدراج البرومبت في خانة الوصف."
-      : "Prompt inserted before the job description.";
-  const copyLabel = lang === "ar" ? "انسخ" : "Copy";
-  const insertLabel = lang === "ar" ? "إدراج" : "Insert";
-  const handlePromptCopy = React.useCallback(
-    (id: string, text: string) => {
-      const payload = text.endsWith("\n") ? text : `${text}\n`;
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        navigator.clipboard
-          .writeText(payload)
-          .then(() => setPromptFeedback({ id, kind: "copy" }))
-          .catch(() => setPromptFeedback({ id, kind: "copy" }));
-      } else {
-        setPromptFeedback({ id, kind: "copy" });
-      }
-    },
-    [setPromptFeedback]
-  );
-  const handlePromptInsert = React.useCallback(
-    (id: string, text: string) => {
-      const trimmedPrompt = text.trimEnd();
-      setDescription((prev) => {
-        const existing = prev.trimStart();
-        if (!existing.length) return `${trimmedPrompt}\n\n`;
-        if (prev.startsWith(trimmedPrompt)) return prev;
-        return `${trimmedPrompt}\n\n${existing}`;
-      });
-      setPromptFeedback({ id, kind: "insert" });
-    },
-    [setDescription, setPromptFeedback]
-  );
   const hasJobDescription = jobDescriptionForAssistant.trim().length > 0;
 
   const listRef = React.useRef<HTMLDivElement | null>(null);
@@ -1722,160 +1587,6 @@ export default function AIConsole() {
                         </ul>
                       </div>
                     ) : null}
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
-                          {lang === "ar"
-                            ? "مخطط المخرجات القياسي"
-                            : "Standard output blueprint"}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handlePromptCopy("blueprint", blueprintLines.join("\n"))}
-                          className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                        >
-                          {copyLabel}
-                        </button>
-                      </div>
-                      <ul className="mt-2 space-y-1 text-[11px] text-[var(--color-text-muted)]">
-                        {blueprintLines.map((line, idx) => (
-                          <li key={`blueprint-${idx}`}>{line}</li>
-                        ))}
-                      </ul>
-                      {promptFeedback?.id === "blueprint" ? (
-                        <div className="mt-2 text-[10px] text-[var(--color-primary)]">
-                          {feedbackCopyText}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
-                          {lang === "ar"
-                            ? "برومبت استخراج المتطلبات من JD"
-                            : "JD requirements extraction prompt"}
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handlePromptCopy("extract", extractionPrompt)}
-                            className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                          >
-                            {copyLabel}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handlePromptInsert("extract", extractionPrompt)}
-                            className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                          >
-                            {insertLabel}
-                          </button>
-                        </div>
-                      </div>
-                      <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-[var(--surface-soft)]/60 px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
-                        {extractionPrompt}
-                      </pre>
-                      {promptFeedback?.id === "extract" ? (
-                        <div className="mt-2 text-[10px] text-[var(--color-primary)]">
-                          {promptFeedback.kind === "copy"
-                            ? feedbackCopyText
-                            : feedbackInsertText}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
-                          {lang === "ar"
-                            ? "قوالب اقتراحات جاهزة (Auto-suggest)"
-                            : "Auto-suggest templates"}
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handlePromptCopy("autosuggest", autoSuggestPrompt)}
-                            className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                          >
-                            {copyLabel}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handlePromptInsert("autosuggest", autoSuggestPrompt)}
-                            className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                          >
-                            {insertLabel}
-                          </button>
-                        </div>
-                      </div>
-                      <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-[var(--surface-soft)]/60 px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
-                        {autoSuggestPrompt}
-                      </pre>
-                      {promptFeedback?.id === "autosuggest" ? (
-                        <div className="mt-2 text-[10px] text-[var(--color-primary)]">
-                          {promptFeedback.kind === "copy"
-                            ? feedbackCopyText
-                            : feedbackInsertText}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/80 p-3">
-                      <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">
-                        {lang === "ar"
-                          ? "اختصارات للاستخدام السريع (Prompt Macro)"
-                          : "Prompt macros"}
-                      </div>
-                      <div className="mt-3 space-y-3">
-                        {promptMacros.map((macro) => (
-                          <div
-                            key={macro.id}
-                            className="rounded-xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-3"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <div className="text-[11px] font-semibold text-[var(--foreground)]">
-                                  {macro.title}
-                                </div>
-                                <div className="text-[10px] text-[var(--color-text-muted)]">
-                                  {macro.description}
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handlePromptCopy(macro.id, macro.content)}
-                                  className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                                >
-                                  {copyLabel}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePromptInsert(macro.id, macro.content)}
-                                  className="rounded-full border border-[var(--color-border)] px-3 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                                >
-                                  {insertLabel}
-                                </button>
-                              </div>
-                            </div>
-                            <pre className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-[var(--surface)]/60 px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
-                              {macro.content}
-                            </pre>
-                            {promptFeedback?.id === macro.id ? (
-                              <div className="mt-2 text-[10px] text-[var(--color-primary)]">
-                                {promptFeedback.kind === "copy"
-                                  ? feedbackCopyText
-                                  : feedbackInsertText}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   </div>
 
                   {/* زر توليد المتطلبات من الوصف */}
