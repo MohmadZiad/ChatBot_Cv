@@ -3,7 +3,7 @@ import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
 import { embedTexts, chatJson } from "./openai.js";
 import { cosine } from "./vector.js";
-import { ensureCvEmbeddings } from "./embeddings.js";
+import { ensureCvChunks, ensureCvEmbeddings } from "./embeddings.js";
 
 type HttpError = Error & { status?: number; code?: string };
 const httpError = (
@@ -72,11 +72,13 @@ const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
 const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
 
 export async function runAnalysis(jobId: string, cvId: string) {
+  // تأكد من وجود chunks أساسًا (قد تكون سير قديمة بلا أجزاء)
+  await ensureCvChunks(cvId);
   // تأكيد وجود embeddings للـ CV (وتوليدها إذا ناقصة)
   await ensureCvEmbeddings(cvId);
 
   // قراءة الـ chunks مع تحويل vector -> real[]
-  const chunks = await prisma.$queryRaw<
+  let chunks = await prisma.$queryRaw<
     { id: bigint; section: string; content: string; embedding: number[] }[]
   >`
     SELECT id, section, content, (embedding::real[]) AS embedding
@@ -84,8 +86,22 @@ export async function runAnalysis(jobId: string, cvId: string) {
     WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
     ORDER BY id ASC
   `;
-  if (!chunks.length)
-    throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
+  if (!chunks.length) {
+    // محاولة أخيرة: أعد بناء الأجزاء والمتجهات ثم أعد القراءة
+    await ensureCvChunks(cvId);
+    await ensureCvEmbeddings(cvId);
+    const retry = await prisma.$queryRaw<
+      { id: bigint; section: string; content: string; embedding: number[] }[]
+    >`
+      SELECT id, section, content, (embedding::real[]) AS embedding
+      FROM "CVChunk"
+      WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
+      ORDER BY id ASC
+    `;
+    if (!retry.length)
+      throw httpError("لا توجد تضمينات على السيرة الذاتية.", 422, "NO_CV_TEXT");
+    chunks = retry;
+  }
 
   // متطلبات الوظيفة
   const reqs = await prisma.jobRequirement.findMany({

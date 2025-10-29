@@ -136,11 +136,34 @@ export async function analysesRoute(app: FastifyInstance) {
     }));
   });
 
+  // GET /api/analyses/by-job/:jobId
+  app.get("/by-job/:jobId", async (req) => {
+    const { jobId } = req.params as any;
+    const list = await prisma.analysis.findMany({
+      where: { jobId },
+      orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+      include: {
+        cv: {
+          select: { id: true, originalFilename: true, createdAt: true },
+        },
+      },
+    });
+
+    return list.map((a) => ({
+      ...a,
+      score: a.score ? Number(a.score) : null,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  });
+
   app.post("/compare", async (req, reply) => {
     try {
       const { cvIds = [] } = (await req.body) as any;
       const res = await compareCvEmbeddings(Array.isArray(cvIds) ? cvIds : []);
-      return { ok: true, ...res };
+      const payload: Record<string, any> = { ...res };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "compare embeddings failed");
       const status = err?.status ?? 400;
@@ -160,7 +183,9 @@ export async function analysesRoute(app: FastifyInstance) {
         Array.isArray(cvIds) ? cvIds : [],
         Number(top) || 3
       );
-      return { ok: true, ...res };
+      const payload: Record<string, any> = { ...res };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "pick best failed");
       const status = err?.status ?? 400;
@@ -180,7 +205,9 @@ export async function analysesRoute(app: FastifyInstance) {
         cvId,
         lang === "en" ? "en" : "ar"
       );
-      return { ok: true, ...response };
+      const payload: Record<string, any> = { ...response };
+      payload.ok = true;
+      return payload;
     } catch (err: any) {
       app.log.error({ err }, "improve suggestions failed");
       const status = err?.status ?? 400;

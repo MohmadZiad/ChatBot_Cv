@@ -2,6 +2,9 @@
 import { embedTexts } from "./openai.js";
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
+import { chunkText } from "../ingestion/chunk.js";
+
+const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
 
 const DIM = Number(process.env.EMBEDDING_DIM || "1536");
 
@@ -9,10 +12,39 @@ const DIM = Number(process.env.EMBEDDING_DIM || "1536");
  * يولّد embeddings لأي CVChunk ما إلها embedding بعد (hasEmbedding=false)
  * وبعدين يرفع الفلاغ hasEmbedding=true مرّة واحدة بشكل جماعي.
  */
+export async function ensureCvChunks(cvId: string) {
+  const existing = await prisma.cVChunk.count({ where: { cvId } });
+  if (existing > 0) return existing;
+
+  const cv = await prisma.cV.findUnique({
+    where: { id: cvId },
+    select: { parsedText: true },
+  });
+
+  const text = cv?.parsedText?.trim();
+  if (!text || text.length < MIN_TEXT) return 0;
+
+  const chunkData = chunkText(text, 1000).map((c) => ({
+    cvId,
+    section: c.section,
+    content: c.content,
+    tokenCount: Math.ceil(c.content.length / 4),
+    hasEmbedding: false,
+  }));
+
+  if (!chunkData.length) return 0;
+
+  await prisma.cVChunk.createMany({ data: chunkData });
+  return chunkData.length;
+}
+
 export async function ensureCvEmbeddings(cvId: string) {
-  // هات الشُنكس اللي لسه ما إلها embedding
+  // هات الشُنكس اللي لسه ما إلها embedding أو اللي خُزنت بدون متجه
   const chunks = await prisma.cVChunk.findMany({
-    where: { cvId, hasEmbedding: false },
+    where: {
+      cvId,
+      OR: [{ hasEmbedding: false }, { embedding: null }],
+    },
     orderBy: { id: "asc" },
     select: { id: true, content: true },
   });

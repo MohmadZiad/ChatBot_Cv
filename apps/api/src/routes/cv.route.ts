@@ -102,6 +102,7 @@ export async function cvRoute(app: FastifyInstance) {
           section: c.section,
           content: c.content,
           tokenCount: Math.ceil(c.content.length / 4),
+          hasEmbedding: false,
         }));
         parts = chunksData.length;
         if (parts > 0) {

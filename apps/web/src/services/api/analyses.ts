@@ -57,6 +57,7 @@ export type Analysis = {
   metrics: AnalysisMetrics | null;
   evidence: EvidenceItem[] | null;
   model?: string | null;
+  cv?: { id: string; name: string; createdAt: string | null } | null;
   createdAt: string;
   updatedAt?: string | null;
 };
@@ -85,6 +86,7 @@ type RawAnalysis = Partial<Analysis> & {
   score?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+  cv?: { id?: unknown; originalFilename?: unknown; name?: unknown; createdAt?: unknown } | null;
 };
 
 function normalizeBreakdown(input: unknown): PerRequirement[] {
@@ -247,6 +249,17 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
   const preliminaryGaps = normalizeGaps(input.gaps, null);
   const metrics = normalizeMetrics(input.metrics, preliminaryGaps, breakdown);
   const gaps = normalizeGaps(input.gaps, metrics);
+  const cvMeta = input.cv
+    ? {
+        id: String(input.cv.id ?? ""),
+        name: String(
+          input.cv.name ?? input.cv.originalFilename ?? input.cv.id ?? ""
+        ),
+        createdAt: input.cv.createdAt
+          ? String(input.cv.createdAt)
+          : null,
+      }
+    : null;
 
   return {
     id: String(input.id ?? ""),
@@ -262,6 +275,7 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
     metrics,
     evidence: normalizeEvidence(input.evidence),
     model: input.model ? String(input.model) : null,
+    cv: cvMeta,
     createdAt: input.createdAt
       ? String(input.createdAt)
       : new Date().toISOString(),
@@ -316,6 +330,10 @@ export const analysesApi = {
   },
   async byCv(cvId: string) {
     const res = await http.get<RawAnalysis[]>(`/analyses/by-cv/${cvId}`);
+    return normalizeList(res);
+  },
+  async byJob(jobId: string) {
+    const res = await http.get<RawAnalysis[]>(`/analyses/by-job/${jobId}`);
     return normalizeList(res);
   },
   compare(input: { cvIds: string[] }) {
