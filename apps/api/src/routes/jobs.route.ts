@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { randomUUID } from "node:crypto";
+import { chatJson } from "../services/openai";
 
 function serializeRequirement(req: any) {
   if (!req) return req;
@@ -100,40 +101,80 @@ export async function jobsRoute(app: FastifyInstance) {
   app.post("/suggest", async (req, reply) => {
     try {
       const { jdText } = (await req.body) as any;
-      if (!jdText) return reply.code(400).send({ error: "jdText required" });
+      const raw = typeof jdText === "string" ? jdText : String(jdText ?? "");
+      const trimmed = raw.trim();
+      if (!trimmed)
+        return reply.code(400).send({ error: "jdText required" });
 
-      const prompt = `
-استخرج متطلبات تقنية مختصرة من وصف الوظيفة التالي. أعد JSON فقط كمصفوفة عناصر، كل عنصر:
-{ "requirement": "...", "mustHave": true|false, "weight": 1|2|3 }
-الوصف:
-"""${jdText}"""`.trim();
+      if (!process.env.OPENAI_API_KEY) {
+        return reply
+          .code(503)
+          .send({ error: "OPENAI_API_KEY missing" });
+      }
 
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: ANALYSIS_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.2,
-        }),
-      });
+      const lang = /[\u0600-\u06FF]/.test(trimmed) ? "ar" : "en";
+      const system =
+        lang === "ar"
+          ? "أنت مستشار توظيف. استخرج متطلبات تقنية موجزة من الوصف التالي وأعد JSON فقط بالشكل {\"items\": [{\"requirement\": string, \"mustHave\": boolean, \"weight\": number}]} بدون أي شرح إضافي."
+          : "You are a hiring assistant. Extract concise technical requirements from the description and respond with JSON only shaped as {\"items\": [{\"requirement\": string, \"mustHave\": boolean, \"weight\": number}]} with no extra prose.";
 
-      if (!r.ok) return reply.code(500).send({ error: "OpenAI failed" });
-      const j: any = await r.json();
+      const payload = trimmed.slice(0, 3200);
+      const ai = await chatJson<{
+        items?: Array<{ requirement?: string; mustHave?: boolean; weight?: number }>;
+      }>(
+        [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content:
+              (lang === "ar"
+                ? "حوّل الوصف إلى متطلبات مختصرة مع تحديد الأهم ووزنه (1-3)."
+                : "Turn the description into concise requirements, mark must-haves and weights (1-3).") +
+              "\n" +
+              payload,
+          },
+        ],
+        { temperature: 0.15, model: ANALYSIS_MODEL }
+      );
 
-      let items: any[] = [];
-      try {
-        items = JSON.parse(j.choices?.[0]?.message?.content || "[]");
-      } catch {}
+      const normalize = (list: any[]): any[] =>
+        (Array.isArray(list) ? list : [])
+          .map((x) => {
+            if (!x) return null;
+            const requirement = String(x.requirement ?? "").trim();
+            if (!requirement) return null;
+            return {
+              requirement: requirement.slice(0, 160),
+              mustHave: Boolean(x.mustHave),
+              weight: Math.min(3, Math.max(1, Number(x.weight ?? 1) || 1)),
+            };
+          })
+          .filter(Boolean) as {
+          requirement: string;
+          mustHave: boolean;
+          weight: number;
+        }[];
 
-      items = (items || []).map((x: any) => ({
-        requirement: String(x?.requirement || "").slice(0, 120),
-        mustHave: !!x?.mustHave,
-        weight: Math.min(3, Math.max(1, Number(x?.weight ?? 1))),
-      }));
+      let items = normalize(ai?.items ?? []);
+
+      if (!items.length && Array.isArray(ai as any)) {
+        items = normalize(ai as any);
+      }
+
+      // fallback: استخرج البنود يدويًا من الأسطر
+      if (!items.length) {
+        const fallback = trimmed
+          .split(/\r?\n|[•\-–•]/g)
+          .map((line) => line.replace(/^[\s\d).:-]+/, "").trim())
+          .filter((line) => line.length >= 4)
+          .slice(0, 12)
+          .map((line) => ({
+            requirement: line.slice(0, 160),
+            mustHave: /must|أساسي|خبرة|خبرة قوية|required|fundamental/i.test(line),
+            weight: /senior|lead|expert|10\+|8\+|15\+|خبير|قوي/i.test(line) ? 3 : 1,
+          }));
+        items = fallback;
+      }
 
       return reply.send({ items });
     } catch (err: any) {
