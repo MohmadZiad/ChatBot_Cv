@@ -345,6 +345,45 @@ export default function AIConsole() {
     prevMaxRef.current = maxStep;
   }, [maxStep, activeStep]);
 
+  React.useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        requirements?: ReqItem[];
+        jd?: string;
+      }>).detail;
+      if (!detail?.requirements || !detail.requirements.length) return;
+      const normalized = detail.requirements.map((item) => ({
+        requirement: item.requirement,
+        mustHave: Boolean(item.mustHave),
+        weight: Number(item.weight ?? 1) || 1,
+      }));
+      setReqs(normalized);
+      setReqText(
+        normalized
+          .map((item) =>
+            `${item.requirement}${item.mustHave ? ", must" : ""}, ${item.weight}`
+          )
+          .join("\n")
+      );
+      if (detail.jd && !description.trim()) setDescription(detail.jd);
+      setActiveStep((prev) => Math.max(prev, 2));
+      push({
+        role: "bot",
+        content: (
+          <div className="text-xs text-[var(--color-text-muted)]">
+            {lang === "ar"
+              ? "تم تحديث المتطلبات من المساعد الذكي."
+              : "Requirements imported from the assistant."}
+          </div>
+        ),
+      });
+    };
+
+    window.addEventListener("job:suggested", handler as EventListener);
+    return () =>
+      window.removeEventListener("job:suggested", handler as EventListener);
+  }, [description, lang, push]);
+
   const goToStep = React.useCallback(
     (step: number) => {
       if (step <= maxStep) setActiveStep(step);

@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { Moon, Sun } from "lucide-react";
+
 type Lang = "ar" | "en";
 
 export default function Topbar() {
@@ -73,9 +75,20 @@ export default function Topbar() {
           </button>
           <button
             onClick={() => applyTheme(!dark)}
-            className="rounded-full border border-[var(--color-primary)]/40 px-3 py-1 font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-primary)]/10"
+            aria-pressed={dark}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 font-semibold text-[var(--color-text-muted)] transition hover:bg-[var(--color-primary)]/10"
           >
-            {dark ? "Dark" : "Light"}
+            {dark ? (
+              <>
+                <Moon size={14} />
+                {lang === "ar" ? "ليلي" : "Dark"}
+              </>
+            ) : (
+              <>
+                <Sun size={14} />
+                {lang === "ar" ? "نهاري" : "Light"}
+              </>
+            )}
           </button>
         </div>
       </div>

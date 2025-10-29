@@ -12,12 +12,16 @@ import {
   Wand2,
   AlertTriangle,
   ArrowUpRight,
+  Copy,
+  Check,
+  Save,
+  ClipboardList,
 } from "lucide-react";
 import ScoreGauge from "./ui/ScoreGauge";
 import { t } from "@/lib/i18n";
 import { useLang } from "@/lib/use-lang";
 import { cvApi } from "@/services/api/cv";
-import { jobsApi } from "@/services/api/jobs";
+import { jobsApi, type Job, type JobRequirement } from "@/services/api/jobs";
 import { analysesApi, type Analysis } from "@/services/api/analyses";
 
 type MsgRole = "bot" | "user" | "sys";
@@ -73,7 +77,7 @@ export default function Chatbot() {
 
   // Data for selects
   const [cvs, setCvs] = useState<any[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [cvId, setCvId] = useState("");
   const [jobId, setJobId] = useState("");
   const [compareId, setCompareId] = useState("");
@@ -81,15 +85,104 @@ export default function Chatbot() {
 
   // Optional JD text → AI suggestion
   const [jd, setJd] = useState("");
+  const [suggestedReqs, setSuggestedReqs] = useState<JobRequirement[]>([]);
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [result, setResult] = useState<Analysis | null>(null);
   const [action, setAction] = useState<"" | "compare" | "pick" | "improve">("");
   const [historyReady, setHistoryReady] = useState(false);
+  const [savingJob, setSavingJob] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const appendMsg = useCallback((entry: Msg) => {
     setMsgs((prev) => [...prev, entry]);
   }, []);
+
+  const guessJobTitle = useCallback(() => {
+    const raw = jd || "";
+    const lines = raw
+      .split(/\r?\n|[.،؛]/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return "";
+    const candidate =
+      lines.find((line) => line.length <= 80 && /\S+/.test(line)) ?? lines[0];
+    const cleaned = candidate.replace(/^(?:-\s*|•\s*)/, "").trim();
+    if (!cleaned) return "";
+    return cleaned.length > 80 ? `${cleaned.slice(0, 77)}…` : cleaned;
+  }, [jd]);
+
+  const handleCopySuggested = useCallback(async () => {
+    if (!suggestedReqs.length) return;
+    const mustTag = tt("chat.mustTag");
+    const weightLabel = tt("chat.weightLabel");
+    const lines = suggestedReqs
+      .map((item) =>
+        `${item.requirement}${item.mustHave ? ` (${mustTag})` : ""} • ${weightLabel} ${Number(item.weight ?? 1).toFixed(1)}`
+      )
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(lines);
+      setCopied(true);
+    } catch (err: any) {
+      appendMsg({ role: "bot", text: formatError(err), kind: "error" });
+    }
+  }, [appendMsg, formatError, suggestedReqs, tt]);
+
+  const handleApplySuggested = useCallback(() => {
+    if (!suggestedReqs.length) return;
+    try {
+      const payload = {
+        requirements: suggestedReqs.map((item) => ({
+          requirement: item.requirement,
+          mustHave: Boolean(item.mustHave),
+          weight: Number(item.weight ?? 1) || 1,
+        })),
+        jd,
+        ts: Date.now(),
+      };
+      window.localStorage?.setItem(
+        "pending-job-requirements",
+        JSON.stringify(payload)
+      );
+      window.dispatchEvent(new CustomEvent("job:suggested", { detail: payload }));
+    } catch (err: any) {
+      appendMsg({ role: "bot", text: formatError(err), kind: "error" });
+    }
+  }, [appendMsg, formatError, jd, suggestedReqs]);
+
+  const handleSaveJob = useCallback(async () => {
+    if (!suggestedReqs.length) {
+      appendMsg({ role: "bot", text: tt("chat.saveJobError"), kind: "error" });
+      return;
+    }
+    const title = guessJobTitle();
+    if (!title) {
+      appendMsg({ role: "bot", text: tt("chat.saveJobError"), kind: "error" });
+      return;
+    }
+    setSavingJob(true);
+    try {
+      const payload = suggestedReqs.map((item) => ({
+        requirement: item.requirement,
+        mustHave: Boolean(item.mustHave),
+        weight: Number(item.weight ?? 1) || 1,
+      }));
+      const job = await jobsApi.create({
+        title,
+        description: jd.trim() || title,
+        requirements: payload,
+      });
+      setJobs((prev) => [job, ...prev.filter((existing) => existing.id !== job.id)]);
+      setJobId(job.id);
+      setSuggestedReqs(job.requirements ?? payload);
+      appendMsg({ role: "bot", text: `✅ ${tt("chat.jobSaved")}` });
+    } catch (err: any) {
+      appendMsg({ role: "bot", text: formatError(err), kind: "error" });
+    } finally {
+      setSavingJob(false);
+    }
+  }, [appendMsg, formatError, guessJobTitle, jd, suggestedReqs, tt]);
 
   const formatError = useCallback(
     (error: unknown): string => {
@@ -139,7 +232,7 @@ export default function Chatbot() {
       .catch(() => {});
     jobsApi
       .list()
-      .then((r) => setJobs(r.items))
+      .then((r) => setJobs(r.items ?? []))
       .catch(() => {});
   }, [open]);
 
@@ -185,6 +278,12 @@ export default function Chatbot() {
     } catch {}
   }, [msgs, historyReady]);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
 
   useEffect(() => {
     const onCompleted = (event: Event) => {
@@ -211,11 +310,19 @@ export default function Chatbot() {
       const r = await jobsApi.suggestFromJD(jd);
       const mustTag = tt("chat.mustTag");
       const weightLabel = tt("chat.weightLabel");
+      const items = Array.isArray(r.items) ? r.items : [];
+      setSuggestedReqs(
+        items.map((item) => ({
+          requirement: item.requirement,
+          mustHave: Boolean(item.mustHave),
+          weight: Number(item.weight ?? 1) || 1,
+        }))
+      );
       appendMsg({
         role: "bot",
         text:
           `✅ ${tt("chat.aiSuggested")}:\n– ` +
-          r.items
+          items
             .map(
               (i) =>
                 `${i.requirement}${i.mustHave ? ` (${mustTag})` : ""} • ${weightLabel} ${i.weight}`
@@ -468,26 +575,81 @@ export default function Chatbot() {
                     className="mt-2 w-full min-h-[120px] rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm focus:border-[var(--color-primary)] focus:outline-none"
                     placeholder={tt('chat.jdPlaceholder')}
                   />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      onClick={handleSuggest}
-                      disabled={!jd.trim() || suggesting}
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
-                    >
-                      {suggesting ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Wand2 size={16} />
-                      )}
-                      {suggesting ? tt('chat.extracting') : tt('chat.suggest')}
-                    </button>
-                    <span className="text-[11px] text-[var(--color-text-muted)]">
-                      {tt('chat.jdHint')}
-                    </span>
-                  </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={handleSuggest}
+                    disabled={!jd.trim() || suggesting}
+                    className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+                  >
+                    {suggesting ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Wand2 size={16} />
+                    )}
+                    {suggesting ? tt('chat.extracting') : tt('chat.suggest')}
+                  </button>
+                  <span className="text-[11px] text-[var(--color-text-muted)]">
+                    {tt('chat.jdHint')}
+                  </span>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
+                {suggestedReqs.length ? (
+                  <div className="mt-4 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-4">
+                    <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-muted)]">
+                      <span>{tt('chat.suggestedTitle')}</span>
+                      <button
+                        onClick={() => setSuggestedReqs([])}
+                        className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {suggestedReqs.map((item, idx) => (
+                        <span
+                          key={`${item.requirement}-${idx}`}
+                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)]/80 px-3 py-1 text-[var(--foreground)]"
+                        >
+                          {item.requirement}
+                          <span className="text-[11px] text-[var(--color-text-muted)]">
+                            {item.mustHave ? tt('chat.mustTag') : 'nice'} • {tt('chat.weightLabel')} {Number(item.weight ?? 1).toFixed(1)}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                      <button
+                        onClick={handleApplySuggested}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 px-3 py-1 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                      >
+                        <ClipboardList className="h-3.5 w-3.5" />
+                        {tt('chat.applySuggested')}
+                      </button>
+                      <button
+                        onClick={handleCopySuggested}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copied ? (lang === 'ar' ? 'تم النسخ' : 'Copied') : tt('chat.copySuggested')}
+                      </button>
+                      <button
+                        onClick={handleSaveJob}
+                        disabled={savingJob}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-secondary)]/50 px-3 py-1 font-semibold text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10 disabled:opacity-60"
+                      >
+                        {savingJob ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Save className="h-3.5 w-3.5" />
+                        )}
+                        {tt('chat.saveJob')}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
                   <div className="grid gap-3">
                     <label className="text-xs font-semibold text-[var(--color-text-muted)]">
                       {tt('chat.pickCv')}

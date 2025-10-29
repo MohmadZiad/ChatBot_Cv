@@ -1,5 +1,15 @@
 // apps/web/src/services/api/http.ts
-const ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
+const normalizeOrigin = (value?: string | null) => {
+  if (!value) return null;
+  return value.replace(/\/$/, "");
+};
+
+const ORIGIN =
+  normalizeOrigin(process.env.NEXT_PUBLIC_API_URL) ||
+  normalizeOrigin(process.env.NEXT_PUBLIC_API_BASE_URL) ||
+  normalizeOrigin(process.env.NEXT_PUBLIC_API) ||
+  "http://localhost:4000";
+
 const API = `${ORIGIN}/api`;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
