@@ -1,7 +1,6 @@
 // apps/api/src/services/embeddings.ts
 import { embedTexts } from "./openai.js";
 import { prisma } from "../db/client";
-import { Prisma } from "@prisma/client";
 import { chunkText } from "../ingestion/chunk.js";
 
 const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
@@ -56,8 +55,6 @@ export async function ensureCvEmbeddings(cvId: string) {
 
   const BATCH = 64;
   let updated = 0;
-  const idsUpdated: (number | bigint)[] = [];
-
   for (let i = 0; i < chunks.length; i += BATCH) {
     const slice = chunks.slice(i, i + BATCH);
 
@@ -67,36 +64,56 @@ export async function ensureCvEmbeddings(cvId: string) {
     // تخزين كل متجه (pgvector) + وسم hasEmbedding
     for (let k = 0; k < slice.length; k++) {
       const id = slice[k].id as unknown as number | bigint;
-      const v = vecs[k];
+      const raw = vecs[k];
+      const vector = normalizeVector(raw);
 
-      if (!Array.isArray(v) || (DIM && v.length !== DIM)) continue;
+      if (!isValidVector(vector)) continue;
 
-      // embedding = ARRAY[...]::vector
       await prisma.$executeRawUnsafe(
-        `UPDATE "CVChunk" SET "embedding" = ${toVectorSQL(v)} WHERE id = $1`,
+        `UPDATE "CVChunk" SET "embedding" = $1::vector, "hasEmbedding" = true WHERE id = $2`,
+        toVectorLiteral(vector),
         id
       );
 
-      idsUpdated.push(id);
       updated++;
     }
-  }
-
-  if (idsUpdated.length) {
-    await prisma.$executeRaw`
-      UPDATE "CVChunk"
-      SET "hasEmbedding" = true
-      WHERE id IN (${Prisma.join(idsUpdated)})
-    `;
   }
 
   return updated;
 }
 
 // Helpers
-function toVectorSQL(vec: number[]) {
-  return `${toArraySql(vec)}::vector`;
+function normalizeVector(value: unknown): number[] {
+  const source: unknown[] = Array.isArray(value)
+    ? value
+    : typeof value === "object" &&
+        value !== null &&
+        typeof (value as { length?: number }).length === "number"
+      ? Array.from(value as ArrayLike<unknown>)
+      : [];
+
+  return source.map((entry) => {
+    const num = typeof entry === "number" ? entry : Number(entry);
+    return Number.isFinite(num) ? num : 0;
+  });
 }
-function toArraySql(vec: number[]) {
-  return `ARRAY[${vec.join(",")}]`;
+
+function isValidVector(vec: number[]) {
+  if (!vec.length) return false;
+  if (DIM && vec.length !== DIM) return false;
+  return vec.some((value) => value !== 0);
+}
+
+function toVectorLiteral(vec: number[]) {
+  const formatted = vec.map((value) => formatComponent(value)).join(",");
+  return `[${formatted}]`;
+}
+
+function formatComponent(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  if (value === 0) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1) return value.toFixed(6).replace(/0+$/g, "").replace(/\.$/, "");
+  if (abs >= 1e-3) return value.toPrecision(8).replace(/0+$/g, "").replace(/\.$/, "");
+  return value.toExponential(6);
 }
