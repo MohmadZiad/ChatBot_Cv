@@ -89,7 +89,8 @@ const toScore10 = (value: number | null | undefined) => {
   return raw > 10 ? raw / 10 : raw;
 };
 
-const formatScore10 = (value: number | null | undefined) => toScore10(value).toFixed(2);
+const formatScore10 = (value: number | null | undefined) =>
+  toScore10(value).toFixed(2);
 
 const summariseAnalysis = (analysis: Analysis) => {
   const metrics = analysis.metrics ?? null;
@@ -97,14 +98,15 @@ const summariseAnalysis = (analysis: Analysis) => {
   const gaps = analysis.gaps ?? null;
   const missingMust = metrics?.missingMust?.length
     ? metrics.missingMust
-    : gaps?.mustHaveMissing ?? [];
+    : (gaps?.mustHaveMissing ?? []);
   const improvement = metrics?.improvement?.length
     ? metrics.improvement
-    : gaps?.improve ?? [];
+    : (gaps?.improve ?? []);
   const strengths = metrics?.topStrengths ?? [];
   const risks = metrics?.riskFlags ?? [];
   const score = Number(analysis.score ?? metrics?.weightedScore ?? 0);
-  const generatedAt = metrics?.generatedAt || analysis.updatedAt || analysis.createdAt;
+  const generatedAt =
+    metrics?.generatedAt || analysis.updatedAt || analysis.createdAt;
 
   return {
     metrics,
@@ -213,23 +215,20 @@ export default function Chatbot() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef<Record<string, number>>({});
 
-  const pushToast = useCallback(
-    (text: string, tone: ToastTone = "info") => {
-      const id = createMsgId();
-      setToasts((prev) => [...prev.slice(-2), { id, text, tone }]);
-      if (typeof window !== "undefined") {
-        const timer = window.setTimeout(() => {
-          setToasts((prev) => prev.filter((toast) => toast.id !== id));
-          if (toastTimers.current[id]) {
-            window.clearTimeout(toastTimers.current[id]!);
-            delete toastTimers.current[id];
-          }
-        }, 4200);
-        toastTimers.current[id] = timer;
-      }
-    },
-    []
-  );
+  const pushToast = useCallback((text: string, tone: ToastTone = "info") => {
+    const id = createMsgId();
+    setToasts((prev) => [...prev.slice(-2), { id, text, tone }]);
+    if (typeof window !== "undefined") {
+      const timer = window.setTimeout(() => {
+        setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        if (toastTimers.current[id]) {
+          window.clearTimeout(toastTimers.current[id]!);
+          delete toastTimers.current[id];
+        }
+      }, 4200);
+      toastTimers.current[id] = timer;
+    }
+  }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -333,12 +332,9 @@ export default function Chatbot() {
   } = useSWRLite<CV[]>(
     open ? "cv:list" : null,
     open
-      ? () =>
-          cvApi
-            .list()
-            .then((r) => (Array.isArray(r.items) ? r.items : []))
+      ? () => cvApi.list().then((r) => (Array.isArray(r.items) ? r.items : []))
       : null,
-    { revalidateOnMount: true },
+    { revalidateOnMount: true }
   );
 
   const {
@@ -351,11 +347,9 @@ export default function Chatbot() {
     open ? "job:list" : null,
     open
       ? () =>
-          jobsApi
-            .list()
-            .then((r) => (Array.isArray(r.items) ? r.items : []))
+          jobsApi.list().then((r) => (Array.isArray(r.items) ? r.items : []))
       : null,
-    { revalidateOnMount: true },
+    { revalidateOnMount: true }
   );
 
   const cvs = useMemo(() => cvsData ?? [], [cvsData]);
@@ -371,13 +365,16 @@ export default function Chatbot() {
     if (!open || !cvsError) return;
     pushToast(
       lang === "ar" ? "تعذّر تحميل السير الذاتية" : "Couldn't load CV list",
-      "error",
+      "error"
     );
   }, [open, cvsError, pushToast, lang]);
 
   useEffect(() => {
     if (!open || !jobsError) return;
-    pushToast(lang === "ar" ? "تعذّر تحميل الوظائف" : "Couldn't load jobs", "error");
+    pushToast(
+      lang === "ar" ? "تعذّر تحميل الوظائف" : "Couldn't load jobs",
+      "error"
+    );
   }, [open, jobsError, pushToast, lang]);
 
   const handleSaveJob = useCallback(async () => {
@@ -402,12 +399,19 @@ export default function Chatbot() {
         description: jd.trim() || title,
         requirements: payload,
       });
-      const nextJobs = [job, ...jobs.filter((existing) => existing.id !== job.id)];
+      const nextJobs = [
+        job,
+        ...jobs.filter((existing) => existing.id !== job.id),
+      ];
       await mutateJobs(nextJobs);
       void revalidateJobs();
       setJobId(job.id);
       setSuggestedReqs(job.requirements ?? payload);
-      appendMsg({ role: "bot", kind: "text", text: `✅ ${tt("chat.jobSaved")}` });
+      appendMsg({
+        role: "bot",
+        kind: "text",
+        text: `✅ ${tt("chat.jobSaved")}`,
+      });
       pushToast(lang === "ar" ? "تم حفظ الوظيفة" : "Job saved", "success");
     } catch (err: any) {
       appendMsg({ role: "bot", text: formatError(err), kind: "error" });
@@ -431,24 +435,29 @@ export default function Chatbot() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      // داخل useEffect الخاص بقراءة CHAT_STORAGE_KEY
       const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          const normalized = parsed
-            .map((item: any) => {
+          const normalized: Msg[] = (parsed as any[])
+            .map((item: any): Msg | null => {
               if (!item || !item.role) return null;
-              const role = (item.role as MsgRole) ?? "bot";
-              const kind = (item.kind as MsgKind) ?? "text";
-              const text = typeof item.text === "string" ? item.text : undefined;
+
+              const role: MsgRole = (item.role as MsgRole) ?? "bot";
+              const kind: MsgKind = (item.kind as MsgKind) ?? "text";
+              const text =
+                typeof item.text === "string" ? item.text : undefined;
               const payload = item.payload ?? undefined;
               const id = typeof item.id === "string" ? item.id : createMsgId();
               const createdAt = Number.isFinite(item?.createdAt)
                 ? Number(item.createdAt)
                 : Date.now();
-              return { id, role, kind, text, payload, createdAt } satisfies Msg;
+
+              return { id, role, kind, text, payload, createdAt };
             })
-            .filter((entry): entry is Msg => entry !== null);
+            .filter((e): e is Msg => e !== null);
+
           if (normalized.length) setMsgs(normalized.slice(-MAX_MESSAGES));
         }
       }
@@ -469,9 +478,7 @@ export default function Chatbot() {
         return [{ ...next, id: prev[0].id, createdAt: prev[0].createdAt }];
       }
       return prev.map((entry) =>
-        entry.kind === "intro"
-          ? { ...entry, text: tt("chat.hello") }
-          : entry
+        entry.kind === "intro" ? { ...entry, text: tt("chat.hello") } : entry
       );
     });
   }, [historyReady, createIntroMessage, tt]);
@@ -504,8 +511,9 @@ export default function Chatbot() {
         payload: {
           analysis,
           job:
-            jobs.find((job) => job.id === (detail?.job?.id ?? analysis.jobId)) ??
-            null,
+            jobs.find(
+              (job) => job.id === (detail?.job?.id ?? analysis.jobId)
+            ) ?? null,
         },
       });
       pushToast(
@@ -774,7 +782,8 @@ export default function Chatbot() {
       if (msg.kind === "improvement" && msg.payload) {
         return <ImprovementCard data={msg.payload} lang={lang} />;
       }
-      const tone = msg.kind === "error" ? "error" : msg.kind === "tip" ? "tip" : "normal";
+      const tone =
+        msg.kind === "error" ? "error" : msg.kind === "tip" ? "tip" : "normal";
       return <ChatBubble role={msg.role} text={msg.text ?? ""} tone={tone} />;
     },
     [lang]
@@ -836,513 +845,523 @@ export default function Chatbot() {
                 </div>
 
                 {toasts.length ? (
-                  <ToastStack items={toasts} onDismiss={removeToast} lang={lang} />
+                  <ToastStack
+                    items={toasts}
+                    onDismiss={removeToast}
+                    lang={lang}
+                  />
                 ) : null}
 
                 <div className="max-h-[72vh] overflow-auto px-5 py-5 space-y-4 bg-[var(--surface)]/72">
-                <div className="space-y-3">
-                  <AnimatePresence initial={false}>
-                    {msgs.map((msg) => (
-                      <motion.div
-                        key={msg.id}
-                        initial={{ opacity: 0, y: 18 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -12 }}
-                        transition={{ type: "spring", stiffness: 260, damping: 24 }}
-                      >
-                        {renderMessage(msg)}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                  {typing ? <TypingIndicator lang={lang} /> : null}
-                </div>
-
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-[var(--color-primary)]">
-                      {tt("chat.jdTitle")}
-                    </div>
-                    <button
-                      onClick={() => setJd("")}
-                      className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                    >
-                      {tt("chat.clear")}
-                    </button>
-                  </div>
-                  <textarea
-                    value={jd}
-                    onChange={(e) => setJd(e.target.value)}
-                    className="mt-2 w-full min-h-[120px] rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-                    placeholder={tt("chat.jdPlaceholder")}
-                  />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      onClick={handleSuggest}
-                      disabled={!jd.trim() || suggesting}
-                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
-                    >
-                      {suggesting ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Wand2 size={16} />
-                      )}
-                      {suggesting ? tt("chat.extracting") : tt("chat.suggest")}
-                    </button>
-                    <span className="text-[11px] text-[var(--color-text-muted)]">
-                      {tt("chat.jdHint")}
-                    </span>
-                  </div>
-
-                  {suggestedReqs.length ? (
-                    <div className="mt-4 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-4">
-                      <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-muted)]">
-                        <span>{tt("chat.suggestedTitle")}</span>
-                        <button
-                          onClick={() => setSuggestedReqs([])}
-                          className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                  <div className="space-y-3">
+                    <AnimatePresence initial={false}>
+                      {msgs.map((msg) => (
+                        <motion.div
+                          key={msg.id}
+                          initial={{ opacity: 0, y: 18 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -12 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 260,
+                            damping: 24,
+                          }}
                         >
-                          ×
-                        </button>
+                          {renderMessage(msg)}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                    {typing ? <TypingIndicator lang={lang} /> : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-[var(--color-primary)]">
+                        {tt("chat.jdTitle")}
                       </div>
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        {suggestedReqs.map((item, idx) => (
-                          <span
-                            key={`${item.requirement}-${idx}`}
-                            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)]/80 px-3 py-1 text-[var(--foreground)]"
+                      <button
+                        onClick={() => setJd("")}
+                        className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        {tt("chat.clear")}
+                      </button>
+                    </div>
+                    <textarea
+                      value={jd}
+                      onChange={(e) => setJd(e.target.value)}
+                      className="mt-2 w-full min-h-[120px] rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-3 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+                      placeholder={tt("chat.jdPlaceholder")}
+                    />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={handleSuggest}
+                        disabled={!jd.trim() || suggesting}
+                        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+                      >
+                        {suggesting ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Wand2 size={16} />
+                        )}
+                        {suggesting
+                          ? tt("chat.extracting")
+                          : tt("chat.suggest")}
+                      </button>
+                      <span className="text-[11px] text-[var(--color-text-muted)]">
+                        {tt("chat.jdHint")}
+                      </span>
+                    </div>
+
+                    {suggestedReqs.length ? (
+                      <div className="mt-4 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-4">
+                        <div className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-muted)]">
+                          <span>{tt("chat.suggestedTitle")}</span>
+                          <button
+                            onClick={() => setSuggestedReqs([])}
+                            className="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
                           >
-                            {item.requirement}
-                            <span className="text-[11px] text-[var(--color-text-muted)]">
-                              {item.mustHave ? tt("chat.mustTag") : "nice"} •{" "}
-                              {tt("chat.weightLabel")}{" "}
-                              {Number(item.weight ?? 1).toFixed(1)}
+                            ×
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          {suggestedReqs.map((item, idx) => (
+                            <span
+                              key={`${item.requirement}-${idx}`}
+                              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)]/80 px-3 py-1 text-[var(--foreground)]"
+                            >
+                              {item.requirement}
+                              <span className="text-[11px] text-[var(--color-text-muted)]">
+                                {item.mustHave ? tt("chat.mustTag") : "nice"} •{" "}
+                                {tt("chat.weightLabel")}{" "}
+                                {Number(item.weight ?? 1).toFixed(1)}
+                              </span>
                             </span>
-                          </span>
-                        ))}
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                          <button
+                            onClick={handleApplySuggested}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 px-3 py-1 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                          >
+                            <ClipboardList className="h-3.5 w-3.5" />
+                            {tt("chat.applySuggested")}
+                          </button>
+                          <button
+                            onClick={handleCopySuggested}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                          >
+                            {copied ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                            {copied
+                              ? lang === "ar"
+                                ? "تم النسخ"
+                                : "Copied"
+                              : tt("chat.copySuggested")}
+                          </button>
+                          <button
+                            onClick={handleSaveJob}
+                            disabled={savingJob}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-secondary)]/50 px-3 py-1 font-semibold text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10 disabled:opacity-60"
+                          >
+                            {savingJob ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Save className="h-3.5 w-3.5" />
+                            )}
+                            {tt("chat.saveJob")}
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                        <button
-                          onClick={handleApplySuggested}
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-primary)]/50 px-3 py-1 font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
-                        >
-                          <ClipboardList className="h-3.5 w-3.5" />
-                          {tt("chat.applySuggested")}
-                        </button>
-                        <button
-                          onClick={handleCopySuggested}
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-3 py-1 font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                        >
-                          {copied ? (
-                            <Check className="h-3.5 w-3.5" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                          {copied
-                            ? lang === "ar"
-                              ? "تم النسخ"
-                              : "Copied"
-                            : tt("chat.copySuggested")}
-                        </button>
-                        <button
-                          onClick={handleSaveJob}
-                          disabled={savingJob}
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-secondary)]/50 px-3 py-1 font-semibold text-[var(--color-secondary)] hover:bg-[var(--color-secondary)]/10 disabled:opacity-60"
-                        >
-                          {savingJob ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Save className="h-3.5 w-3.5" />
-                          )}
-                          {tt("chat.saveJob")}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
+                    ) : null}
+                  </div>
 
-                <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
-                  <div className="grid gap-3">
-                    <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt("chat.pickCv")}
-                      <select
-                        value={cvId}
-                        onChange={(e) => setCvId(e.target.value)}
-                        className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-                        disabled={cvsLoading && !cvs.length}
-                      >
-                        <option value="">
-                          {cvsLoading
-                            ? lang === "ar"
-                              ? "جارٍ تحميل السير الذاتية..."
-                              : "Loading CVs..."
-                            : cvs.length
-                              ? tt("chat.pickCv")
-                              : lang === "ar"
-                                ? "لا توجد سير ذاتية مرفوعة"
-                                : "No CVs uploaded yet"}
-                        </option>
-                        {cvs.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.originalFilename || c.id.slice(0, 12)}
+                  <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-3">
+                    <div className="grid gap-3">
+                      <label className="text-xs font-semibold text-[var(--color-text-muted)]">
+                        {tt("chat.pickCv")}
+                        <select
+                          value={cvId}
+                          onChange={(e) => setCvId(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+                          disabled={cvsLoading && !cvs.length}
+                        >
+                          <option value="">
+                            {cvsLoading
+                              ? lang === "ar"
+                                ? "جارٍ تحميل السير الذاتية..."
+                                : "Loading CVs..."
+                              : cvs.length
+                                ? tt("chat.pickCv")
+                                : lang === "ar"
+                                  ? "لا توجد سير ذاتية مرفوعة"
+                                  : "No CVs uploaded yet"}
                           </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt("chat.secondCv")}
-                      <select
-                        value={compareId}
-                        onChange={(e) => setCompareId(e.target.value)}
-                        className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-secondary)] focus:outline-none"
-                        disabled={cvsLoading && !cvs.length}
-                      >
-                        <option value="">
-                          {cvsLoading
-                            ? lang === "ar"
-                              ? "جارٍ تحميل السير الذاتية..."
-                              : "Loading CVs..."
-                            : tt("chat.secondCvPlaceholder")}
-                        </option>
-                        {cvs
-                          .filter((c) => c.id !== cvId)
-                          .map((c) => (
-                            <option key={`compare-${c.id}`} value={c.id}>
+                          {cvs.map((c) => (
+                            <option key={c.id} value={c.id}>
                               {c.originalFilename || c.id.slice(0, 12)}
                             </option>
                           ))}
-                      </select>
-                    </label>
+                        </select>
+                      </label>
 
-                    <label className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {tt("chat.pickJob")}
-                      <select
-                        value={jobId}
-                        onChange={(e) => setJobId(e.target.value)}
-                        className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-                        disabled={jobsLoading && !jobs.length}
-                      >
-                        <option value="">
-                          {jobsLoading
-                            ? lang === "ar"
-                              ? "جارٍ تحميل الوظائف..."
-                              : "Loading jobs..."
-                            : jobs.length
-                              ? tt("chat.pickJob")
-                              : lang === "ar"
-                                ? "لا توجد وظائف محفوظة بعد"
-                                : "No saved jobs yet"}
-                        </option>
-                        {jobs.map((j) => (
-                          <option key={j.id} value={j.id}>
-                            {j.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                    <button
-                      onClick={() => toggleSelectedCv(cvId)}
-                      disabled={!cvId}
-                      className="rounded-full border border-[var(--color-primary)]/50 px-3 py-1 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-40"
-                    >
-                      {tt("chat.addSelection")}
-                    </button>
-                    {selectedCvIds.length ? (
-                      <span>{tt("chat.selectedHint")}</span>
-                    ) : null}
-                  </div>
-                  {selectedCvIds.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedCvIds.map((id) => (
-                        <button
-                          key={`chip-${id}`}
-                          onClick={() => toggleSelectedCv(id)}
-                          className="inline-flex items-center gap-1 rounded-full bg-[var(--color-secondary)]/15 px-3 py-1 text-xs font-medium text-[var(--color-secondary)]"
+                      <label className="text-xs font-semibold text-[var(--color-text-muted)]">
+                        {tt("chat.secondCv")}
+                        <select
+                          value={compareId}
+                          onChange={(e) => setCompareId(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-secondary)] focus:outline-none"
+                          disabled={cvsLoading && !cvs.length}
                         >
-                          {resolveCvLabel(id)}
-                          <X size={14} />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                          <option value="">
+                            {cvsLoading
+                              ? lang === "ar"
+                                ? "جارٍ تحميل السير الذاتية..."
+                                : "Loading CVs..."
+                              : tt("chat.secondCvPlaceholder")}
+                          </option>
+                          {cvs
+                            .filter((c) => c.id !== cvId)
+                            .map((c) => (
+                              <option key={`compare-${c.id}`} value={c.id}>
+                                {c.originalFilename || c.id.slice(0, 12)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
 
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <button
-                      onClick={run}
-                      disabled={!cvId || !jobId || loading}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] via-[#ff8b2e] to-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
-                    >
-                      {loading ? (
-                        <Loader2 className="animate-spin" size={16} />
-                      ) : (
-                        <Play size={16} />
-                      )}
-                      {loading ? tt("chat.running") : tt("chat.run")}
-                    </button>
-                    <button
-                      onClick={handleCompare}
-                      disabled={action === "compare"}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-secondary)]/60 bg-[var(--surface-muted)]/60 px-4 py-2 text-sm font-semibold text-[var(--color-secondary)] hover:border-[var(--color-secondary)]"
-                    >
-                      {action === "compare" ? (
-                        <Loader2 className="animate-spin" size={16} />
-                      ) : null}
-                      {tt("chat.compare")}
-                    </button>
-                    <button
-                      onClick={handlePickBest}
-                      disabled={action === "pick"}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-primary)]/40 bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-primary)] hover:border-[var(--color-primary)]"
-                    >
-                      {action === "pick" ? (
-                        <Loader2 className="animate-spin" size={16} />
-                      ) : null}
-                      {tt("chat.pickBest")}
-                    </button>
-                    <button
-                      onClick={handleImprove}
-                      disabled={action === "improve"}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
-                    >
-                      {action === "improve" ? (
-                        <Loader2 className="animate-spin" size={16} />
-                      ) : null}
-                      {tt("chat.improve")}
-                    </button>
-                  </div>
-                </div>
-
-                {result && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm"
-                  >
-                    {(() => {
-                      const metrics = result.metrics ?? null;
-                      const gaps = result.gaps ?? null;
-                      const missingMust = metrics?.missingMust?.length
-                        ? metrics.missingMust
-                        : (gaps?.mustHaveMissing ?? []);
-                      const improvement = metrics?.improvement?.length
-                        ? metrics.improvement
-                        : (gaps?.improve ?? []);
-                      const strengths = metrics?.topStrengths ?? [];
-                      const risks = metrics?.riskFlags ?? [];
-                      const generatedAt = metrics?.generatedAt
-                        ? new Date(metrics.generatedAt)
-                        : null;
-
-                      return (
-                        <>
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
-                            <div className="grid place-items-center rounded-2xl bg-[var(--surface-muted)]/60 p-4">
-                              <ScoreGauge
-                                value={
-                                  result.score ??
-                                  metrics?.weightedScore ??
-                                  0
-                                }
-                              />
-                            </div>
-                            <div className="space-y-3">
-                              <div>
-                                <div className="text-lg font-semibold text-[var(--color-primary)]">
-                                  {tt("chat.score")} •{" "}
-                                  {formatScore10(
-                                    result.score ?? metrics?.weightedScore ?? 0
-                                  )}
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                                  <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
-                                    status: {result.status}
-                                  </span>
-                                  {result.model ? (
-                                    <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
-                                      model: {result.model}
-                                    </span>
-                                  ) : null}
-                                  {generatedAt ? (
-                                    <span>
-                                      {generatedAt.toLocaleString(
-                                        lang === "ar" ? "ar" : "en",
-                                        {
-                                          hour12: false,
-                                        }
-                                      )}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div className="grid gap-2 sm:grid-cols-3">
-                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
-                                  <div className="text-[11px] text-[var(--color-text-muted)]">
-                                    {tt("chat.mustPercent")}
-                                  </div>
-                                  <div className="text-sm font-semibold text-[var(--foreground)]">
-                                    {toPercent(metrics?.mustPercent)}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
-                                  <div className="text-[11px] text-[var(--color-text-muted)]">
-                                    {tt("chat.nicePercent")}
-                                  </div>
-                                  <div className="text-sm font-semibold text-[var(--foreground)]">
-                                    {toPercent(metrics?.nicePercent)}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
-                                  <div className="text-[11px] text-[var(--color-text-muted)]">
-                                    {tt("chat.gatePassed")}
-                                  </div>
-                                  <div className="text-sm font-semibold text-[var(--foreground)]">
-                                    {metrics?.gatePassed ? "✓" : "✗"}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 text-[11px] text-[var(--color-text-muted)]">
-                                {missingMust.length ? (
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-semibold text-[var(--color-primary)]">
-                                      {tt("chat.missingMust")}
-                                    </span>
-                                    {missingMust.map((item) => (
-                                      <span
-                                        key={`miss-${item}`}
-                                        className="rounded-full bg-[#fee4e2] px-3 py-1 text-[#b42318]"
-                                      >
-                                        {item}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null}
-                                {improvement.length ? (
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-semibold text-[#d4850d]">
-                                      {tt("chat.improvements")}
-                                    </span>
-                                    {improvement.map((item) => (
-                                      <span
-                                        key={`imp-${item}`}
-                                        className="rounded-full bg-[#fef0c7] px-3 py-1 text-[#b54708]"
-                                      >
-                                        {item}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null}
-                                {risks.length ? (
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-semibold text-[#b42318]">
-                                      {tt("chat.risks")}
-                                    </span>
-                                    {risks.map((flag) => {
-                                      const label = getRiskLabel(flag, lang);
-                                      return (
-                                        <span
-                                          key={`risk-${flag}`}
-                                          className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
-                                        >
-                                          <AlertTriangle className="h-3.5 w-3.5" />
-                                          {label}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
-                                {!missingMust.length &&
-                                !improvement.length &&
-                                !risks.length ? (
-                                  <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-center">
-                                    {tt("chat.stored")}
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--color-text-muted)]">
-                                <span>{tt("chat.stored")}</span>
-                                <a
-                                  href={`/analysis/${result.id}`}
-                                  className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
-                                >
-                                  {tt("chat.viewFull")}{" "}
-                                  <ArrowUpRight className="h-3.5 w-3.5" />
-                                </a>
-                              </div>
-                            </div>
-                          </div>
-
-                          {strengths.length ? (
-                            <div className="space-y-2">
-                              <div className="text-sm font-semibold text-[var(--color-text-muted)]">
-                                {tt("chat.strengths")}
-                              </div>
-                              <div className="flex flex-wrap gap-2 text-xs">
-                                {strengths.map((item) => (
-                                  <div
-                                    key={`${item.requirement}-${item.score}`}
-                                    className="rounded-full border border-[var(--color-secondary)]/40 bg-[var(--surface-soft)] px-3 py-1"
-                                  >
-                                    {item.requirement} • {item.score.toFixed(1)}{" "}
-                                    / 10
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      );
-                    })()}
-
-                    {Array.isArray(result.breakdown) &&
-                    result.breakdown.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="text-sm font-semibold text-[var(--color-text-muted)]">
-                          {tt("chat.breakdown") ?? "Breakdown"}
-                        </div>
-                        <div className="max-h-64 space-y-3 overflow-auto pr-1">
-                          {result.breakdown.map((row, idx) => (
-                            <div
-                              key={`${row.requirement}-${idx}`}
-                              className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-3 text-xs"
-                            >
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="text-sm font-medium text-[var(--foreground)]">
-                                  {row.requirement}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
-                                  <span className="rounded-full bg-white/60 px-2 py-1">
-                                    {row.mustHave ? "Must" : "Nice"}
-                                  </span>
-                                  <span className="rounded-full bg-white/60 px-2 py-1">
-                                    {tt("chat.weightLabel")}: {row.weight}
-                                  </span>
-                                  <span className="rounded-full bg-white/60 px-2 py-1">
-                                    sim {(row.similarity * 100).toFixed(1)}%
-                                  </span>
-                                  <span className="rounded-full bg-white/60 px-2 py-1">
-                                    {row.score10.toFixed(1)} / 10
-                                  </span>
-                                </div>
-                              </div>
-                              {row.bestChunk?.excerpt ? (
-                                <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
-                                  {row.bestChunk.excerpt}
-                                </p>
-                              ) : null}
-                            </div>
+                      <label className="text-xs font-semibold text-[var(--color-text-muted)]">
+                        {tt("chat.pickJob")}
+                        <select
+                          value={jobId}
+                          onChange={(e) => setJobId(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+                          disabled={jobsLoading && !jobs.length}
+                        >
+                          <option value="">
+                            {jobsLoading
+                              ? lang === "ar"
+                                ? "جارٍ تحميل الوظائف..."
+                                : "Loading jobs..."
+                              : jobs.length
+                                ? tt("chat.pickJob")
+                                : lang === "ar"
+                                  ? "لا توجد وظائف محفوظة بعد"
+                                  : "No saved jobs yet"}
+                          </option>
+                          {jobs.map((j) => (
+                            <option key={j.id} value={j.id}>
+                              {j.title}
+                            </option>
                           ))}
-                        </div>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                      <button
+                        onClick={() => toggleSelectedCv(cvId)}
+                        disabled={!cvId}
+                        className="rounded-full border border-[var(--color-primary)]/50 px-3 py-1 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-40"
+                      >
+                        {tt("chat.addSelection")}
+                      </button>
+                      {selectedCvIds.length ? (
+                        <span>{tt("chat.selectedHint")}</span>
+                      ) : null}
+                    </div>
+                    {selectedCvIds.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedCvIds.map((id) => (
+                          <button
+                            key={`chip-${id}`}
+                            onClick={() => toggleSelectedCv(id)}
+                            className="inline-flex items-center gap-1 rounded-full bg-[var(--color-secondary)]/15 px-3 py-1 text-xs font-medium text-[var(--color-secondary)]"
+                          >
+                            {resolveCvLabel(id)}
+                            <X size={14} />
+                          </button>
+                        ))}
                       </div>
-                    ) : null}
-                  </motion.div>
-                )}
+                    )}
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button
+                        onClick={run}
+                        disabled={!cvId || !jobId || loading}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[var(--color-primary)] via-[#ff8b2e] to-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
+                      >
+                        {loading ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <Play size={16} />
+                        )}
+                        {loading ? tt("chat.running") : tt("chat.run")}
+                      </button>
+                      <button
+                        onClick={handleCompare}
+                        disabled={action === "compare"}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-secondary)]/60 bg-[var(--surface-muted)]/60 px-4 py-2 text-sm font-semibold text-[var(--color-secondary)] hover:border-[var(--color-secondary)]"
+                      >
+                        {action === "compare" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : null}
+                        {tt("chat.compare")}
+                      </button>
+                      <button
+                        onClick={handlePickBest}
+                        disabled={action === "pick"}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-primary)]/40 bg-[var(--surface-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-primary)] hover:border-[var(--color-primary)]"
+                      >
+                        {action === "pick" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : null}
+                        {tt("chat.pickBest")}
+                      </button>
+                      <button
+                        onClick={handleImprove}
+                        disabled={action === "improve"}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                      >
+                        {action === "improve" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : null}
+                        {tt("chat.improve")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {result && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm"
+                    >
+                      {(() => {
+                        const metrics = result.metrics ?? null;
+                        const gaps = result.gaps ?? null;
+                        const missingMust = metrics?.missingMust?.length
+                          ? metrics.missingMust
+                          : (gaps?.mustHaveMissing ?? []);
+                        const improvement = metrics?.improvement?.length
+                          ? metrics.improvement
+                          : (gaps?.improve ?? []);
+                        const strengths = metrics?.topStrengths ?? [];
+                        const risks = metrics?.riskFlags ?? [];
+                        const generatedAt = metrics?.generatedAt
+                          ? new Date(metrics.generatedAt)
+                          : null;
+
+                        return (
+                          <>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
+                              <div className="grid place-items-center rounded-2xl bg-[var(--surface-muted)]/60 p-4">
+                                <ScoreGauge
+                                  value={
+                                    result.score ?? metrics?.weightedScore ?? 0
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-3">
+                                <div>
+                                  <div className="text-lg font-semibold text-[var(--color-primary)]">
+                                    {tt("chat.score")} •{" "}
+                                    {formatScore10(
+                                      result.score ??
+                                        metrics?.weightedScore ??
+                                        0
+                                    )}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                    <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
+                                      status: {result.status}
+                                    </span>
+                                    {result.model ? (
+                                      <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
+                                        model: {result.model}
+                                      </span>
+                                    ) : null}
+                                    {generatedAt ? (
+                                      <span>
+                                        {generatedAt.toLocaleString(
+                                          lang === "ar" ? "ar" : "en",
+                                          {
+                                            hour12: false,
+                                          }
+                                        )}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                    <div className="text-[11px] text-[var(--color-text-muted)]">
+                                      {tt("chat.mustPercent")}
+                                    </div>
+                                    <div className="text-sm font-semibold text-[var(--foreground)]">
+                                      {toPercent(metrics?.mustPercent)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                    <div className="text-[11px] text-[var(--color-text-muted)]">
+                                      {tt("chat.nicePercent")}
+                                    </div>
+                                    <div className="text-sm font-semibold text-[var(--foreground)]">
+                                      {toPercent(metrics?.nicePercent)}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                    <div className="text-[11px] text-[var(--color-text-muted)]">
+                                      {tt("chat.gatePassed")}
+                                    </div>
+                                    <div className="text-sm font-semibold text-[var(--foreground)]">
+                                      {metrics?.gatePassed ? "✓" : "✗"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 text-[11px] text-[var(--color-text-muted)]">
+                                  {missingMust.length ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-semibold text-[var(--color-primary)]">
+                                        {tt("chat.missingMust")}
+                                      </span>
+                                      {missingMust.map((item) => (
+                                        <span
+                                          key={`miss-${item}`}
+                                          className="rounded-full bg-[#fee4e2] px-3 py-1 text-[#b42318]"
+                                        >
+                                          {item}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {improvement.length ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-semibold text-[#d4850d]">
+                                        {tt("chat.improvements")}
+                                      </span>
+                                      {improvement.map((item) => (
+                                        <span
+                                          key={`imp-${item}`}
+                                          className="rounded-full bg-[#fef0c7] px-3 py-1 text-[#b54708]"
+                                        >
+                                          {item}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {risks.length ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-semibold text-[#b42318]">
+                                        {tt("chat.risks")}
+                                      </span>
+                                      {risks.map((flag) => {
+                                        const label = getRiskLabel(flag, lang);
+                                        return (
+                                          <span
+                                            key={`risk-${flag}`}
+                                            className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
+                                          >
+                                            <AlertTriangle className="h-3.5 w-3.5" />
+                                            {label}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                  {!missingMust.length &&
+                                  !improvement.length &&
+                                  !risks.length ? (
+                                    <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-center">
+                                      {tt("chat.stored")}
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--color-text-muted)]">
+                                  <span>{tt("chat.stored")}</span>
+                                  <a
+                                    href={`/analysis/${result.id}`}
+                                    className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                                  >
+                                    {tt("chat.viewFull")}{" "}
+                                    <ArrowUpRight className="h-3.5 w-3.5" />
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+
+                            {strengths.length ? (
+                              <div className="space-y-2">
+                                <div className="text-sm font-semibold text-[var(--color-text-muted)]">
+                                  {tt("chat.strengths")}
+                                </div>
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                  {strengths.map((item) => (
+                                    <div
+                                      key={`${item.requirement}-${item.score}`}
+                                      className="rounded-full border border-[var(--color-secondary)]/40 bg-[var(--surface-soft)] px-3 py-1"
+                                    >
+                                      {item.requirement} •{" "}
+                                      {item.score.toFixed(1)} / 10
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </>
+                        );
+                      })()}
+
+                      {Array.isArray(result.breakdown) &&
+                      result.breakdown.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold text-[var(--color-text-muted)]">
+                            {tt("chat.breakdown") ?? "Breakdown"}
+                          </div>
+                          <div className="max-h-64 space-y-3 overflow-auto pr-1">
+                            {result.breakdown.map((row, idx) => (
+                              <div
+                                key={`${row.requirement}-${idx}`}
+                                className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-3 text-xs"
+                              >
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="text-sm font-medium text-[var(--foreground)]">
+                                    {row.requirement}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                    <span className="rounded-full bg-white/60 px-2 py-1">
+                                      {row.mustHave ? "Must" : "Nice"}
+                                    </span>
+                                    <span className="rounded-full bg-white/60 px-2 py-1">
+                                      {tt("chat.weightLabel")}: {row.weight}
+                                    </span>
+                                    <span className="rounded-full bg-white/60 px-2 py-1">
+                                      sim {(row.similarity * 100).toFixed(1)}%
+                                    </span>
+                                    <span className="rounded-full bg-white/60 px-2 py-1">
+                                      {row.score10.toFixed(1)} / 10
+                                    </span>
+                                  </div>
+                                </div>
+                                {row.bestChunk?.excerpt ? (
+                                  <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+                                    {row.bestChunk.excerpt}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </motion.div>
+                  )}
+                </div>
               </div>
-            </div>
             </motion.div>
           </motion.div>
         )}
@@ -1360,8 +1379,13 @@ type ChatBubbleProps = {
 function ChatBubble({ role, text, tone = "normal" }: ChatBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isUser = role === "user";
-  const alignClass = isUser ? "justify-end" : role === "sys" ? "justify-center" : "justify-start";
-  const userGradient = "linear-gradient(135deg, var(--color-primary), #ff9440, var(--color-accent))";
+  const alignClass = isUser
+    ? "justify-end"
+    : role === "sys"
+      ? "justify-center"
+      : "justify-start";
+  const userGradient =
+    "linear-gradient(135deg, var(--color-primary), #ff9440, var(--color-accent))";
 
   let background = "var(--surface)";
   let border = "var(--color-border)";
@@ -1394,7 +1418,7 @@ function ChatBubble({ role, text, tone = "normal" }: ChatBubbleProps) {
     "rounded-full border p-1 transition",
     isUser
       ? "border-white/30 bg-white/10 text-white/90 hover:bg-white/20"
-      : "border-[var(--color-border)]/60 bg-white/80 text-[var(--color-text-muted)] hover:bg-white",
+      : "border-[var(--color-border)]/60 bg-white/80 text-[var(--color-text-muted)] hover:bg-white"
   );
 
   return (
@@ -1403,7 +1427,8 @@ function ChatBubble({ role, text, tone = "normal" }: ChatBubbleProps) {
         whileTap={{ scale: 0.98 }}
         className={clsx(
           "relative max-w-[85%] overflow-hidden rounded-3xl px-4 py-3 text-sm leading-relaxed shadow-lg",
-          role === "sys" && "bg-[var(--surface-muted)]/90 text-[11px] text-[var(--color-text-muted)]"
+          role === "sys" &&
+            "bg-[var(--surface-muted)]/90 text-[11px] text-[var(--color-text-muted)]"
         )}
         style={{ background, border: `1px solid ${border}`, color: textColor }}
       >
@@ -1421,7 +1446,11 @@ function ChatBubble({ role, text, tone = "normal" }: ChatBubbleProps) {
           aria-hidden
           className={clsx(
             "pointer-events-none absolute bottom-[-6px] h-4 w-4 rotate-45",
-            isUser ? "right-4" : role === "sys" ? "left-1/2 -translate-x-1/2" : "left-4"
+            isUser
+              ? "right-4"
+              : role === "sys"
+                ? "left-1/2 -translate-x-1/2"
+                : "left-4"
           )}
           style={{ background }}
         />
@@ -1458,18 +1487,17 @@ function TypingIndicator({ lang }: TypingIndicatorProps) {
   );
 }
 
-type AnalysisCardProps = {
-  analysis: Analysis;
-  job: Job | null;
-  lang: string;
-};
+type AnalysisCardProps = { analysis: Analysis; job: Job | null; lang: Lang };
 
 function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
   const summary = summariseAnalysis(analysis);
   const formattedDate = summary.generatedAt
-    ? new Date(summary.generatedAt).toLocaleString(lang === "ar" ? "ar" : "en", {
-        hour12: false,
-      })
+    ? new Date(summary.generatedAt).toLocaleString(
+        lang === "ar" ? "ar" : "en",
+        {
+          hour12: false,
+        }
+      )
     : null;
   const breakdownPreview = (analysis.breakdown ?? []).slice(0, 3);
 
@@ -1486,7 +1514,8 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
               {lang === "ar" ? "تحليل مكتمل" : "Analysis ready"}
             </div>
             <h3 className="text-xl font-semibold">
-              {job?.title || (lang === "ar" ? "وظيفة بدون عنوان" : "Untitled job")}
+              {job?.title ||
+                (lang === "ar" ? "وظيفة بدون عنوان" : "Untitled job")}
             </h3>
             <p className="text-sm text-white/80">
               {lang === "ar"
@@ -1501,13 +1530,16 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
             <ScoreGauge value={summary.score} size={120} />
             <div className="space-y-2 text-xs text-white/80">
               <div className="rounded-full bg-white/10 px-3 py-1">
-                {lang === "ar" ? "النقاط" : "Score"}: {formatScore10(summary.score)}
+                {lang === "ar" ? "النقاط" : "Score"}:{" "}
+                {formatScore10(summary.score)}
               </div>
               <div className="rounded-full bg-white/10 px-3 py-1">
-                {lang === "ar" ? "مطلوب" : "Must"}: {toPercent(summary.metrics?.mustPercent ?? 0)}
+                {lang === "ar" ? "مطلوب" : "Must"}:{" "}
+                {toPercent(summary.metrics?.mustPercent ?? 0)}
               </div>
               <div className="rounded-full bg-white/10 px-3 py-1">
-                {lang === "ar" ? "إضافي" : "Nice"}: {toPercent(summary.metrics?.nicePercent ?? 0)}
+                {lang === "ar" ? "إضافي" : "Nice"}:{" "}
+                {toPercent(summary.metrics?.nicePercent ?? 0)}
               </div>
             </div>
           </div>
@@ -1572,13 +1604,17 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
             </div>
             <div className="space-y-2 text-xs text-white/80">
               {breakdownPreview.map((row, idx) => (
-                <div key={`${row.requirement}-${idx}`} className="rounded-2xl bg-white/10 px-3 py-2">
+                <div
+                  key={`${row.requirement}-${idx}`}
+                  className="rounded-2xl bg-white/10 px-3 py-2"
+                >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{row.requirement}</span>
                     <span>{row.score10.toFixed(1)} / 10</span>
                   </div>
                   <div className="mt-1 text-[10px] uppercase tracking-wide">
-                    {lang === "ar" ? "تشابه" : "Similarity"}: {(row.similarity * 100).toFixed(1)}%
+                    {lang === "ar" ? "تشابه" : "Similarity"}:{" "}
+                    {(row.similarity * 100).toFixed(1)}%
                   </div>
                 </div>
               ))}
@@ -1609,11 +1645,20 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
 
 type ComparisonCardProps = {
   data: {
-    pairs: Array<{ a: { id: string; label: string }; b: { id: string; label: string }; similarity: number }>;
+    pairs: Array<{
+      a: { id: string; label: string };
+      b: { id: string; label: string };
+      similarity: number;
+    }>;
     insights?: string[];
-    meta?: Array<{ id: string; name: string; createdAt: string | null; lang?: string | null }>;
+    meta?: Array<{
+      id: string;
+      name: string;
+      createdAt: string | null;
+      lang?: string | null;
+    }>;
   };
-  lang: string;
+  lang: Lang;
 };
 
 function ComparisonCard({ data, lang }: ComparisonCardProps) {
@@ -1621,7 +1666,7 @@ function ComparisonCard({ data, lang }: ComparisonCardProps) {
     ? data.pairs.reduce(
         (top, pair) =>
           pair.similarity > (top?.similarity ?? -Infinity) ? pair : top,
-        data.pairs[0],
+        data.pairs[0]
       )
     : null;
 
@@ -1668,7 +1713,9 @@ function ComparisonCard({ data, lang }: ComparisonCardProps) {
               <div className="mt-2 h-2 w-full rounded-full bg-white/20">
                 <div
                   className="h-full rounded-full bg-white"
-                  style={{ width: `${Math.min(100, Math.max(0, pair.similarity))}%` }}
+                  style={{
+                    width: `${Math.min(100, Math.max(0, pair.similarity))}%`,
+                  }}
                 />
               </div>
             </div>
@@ -1711,11 +1758,15 @@ function ComparisonCard({ data, lang }: ComparisonCardProps) {
                     <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-white/70">
                       {item.lang ? (
                         <span className="rounded-full bg-black/30 px-2 py-1">
-                          {lang === "ar" ? `اللغة: ${item.lang}` : `Lang: ${item.lang}`}
+                          {lang === "ar"
+                            ? `اللغة: ${item.lang}`
+                            : `Lang: ${item.lang}`}
                         </span>
                       ) : null}
                       {stamp ? (
-                        <span className="rounded-full bg-black/30 px-2 py-1">{stamp}</span>
+                        <span className="rounded-full bg-black/30 px-2 py-1">
+                          {stamp}
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -1754,7 +1805,7 @@ type ImprovementCardProps = {
     top?: Array<{ cvId: string; fileName: string; score: number }>;
     targetCv?: { id: string; name: string };
   };
-  lang: string;
+  lang: Lang;
 };
 
 function ImprovementCard({ data, lang }: ImprovementCardProps) {
@@ -1801,7 +1852,10 @@ function ImprovementCard({ data, lang }: ImprovementCardProps) {
             </div>
             <div className="space-y-2">
               {ranking.slice(0, 3).map((item, idx) => (
-                <div key={`rank-${item.cvId}`} className="rounded-2xl bg-white/10 px-3 py-2 text-xs">
+                <div
+                  key={`rank-${item.cvId}`}
+                  className="rounded-2xl bg-white/10 px-3 py-2 text-xs"
+                >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">
                       #{idx + 1} • {item.fileName}
@@ -1810,13 +1864,21 @@ function ImprovementCard({ data, lang }: ImprovementCardProps) {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-wide">
                     <span className="rounded-full bg-black/30 px-2 py-1">
-                      {lang === "ar" ? "مطلوب" : "Must"}: {toPercent(item.mustPercent)}
+                      {lang === "ar" ? "مطلوب" : "Must"}:{" "}
+                      {toPercent(item.mustPercent)}
                     </span>
                     <span className="rounded-full bg-black/30 px-2 py-1">
-                      {lang === "ar" ? "إضافي" : "Nice"}: {toPercent(item.nicePercent)}
+                      {lang === "ar" ? "إضافي" : "Nice"}:{" "}
+                      {toPercent(item.nicePercent)}
                     </span>
                     <span className="rounded-full bg-black/30 px-2 py-1">
-                      {item.gatePassed ? (lang === "ar" ? "يجتاز" : "Pass") : lang === "ar" ? "لا يجتاز" : "Fail"}
+                      {item.gatePassed
+                        ? lang === "ar"
+                          ? "يجتاز"
+                          : "Pass"
+                        : lang === "ar"
+                          ? "لا يجتاز"
+                          : "Fail"}
                     </span>
                   </div>
                 </div>
@@ -1828,13 +1890,16 @@ function ImprovementCard({ data, lang }: ImprovementCardProps) {
         {data.metrics ? (
           <div className="grid gap-2 sm:grid-cols-3 text-xs text-white/80">
             <div className="rounded-2xl bg-white/10 px-3 py-2">
-              {lang === "ar" ? "النقاط" : "Score"}: {data.metrics.score.toFixed(1)}
+              {lang === "ar" ? "النقاط" : "Score"}:{" "}
+              {data.metrics.score.toFixed(1)}
             </div>
             <div className="rounded-2xl bg-white/10 px-3 py-2">
-              {lang === "ar" ? "مطلوب" : "Must"}: {toPercent(data.metrics.mustPercent)}
+              {lang === "ar" ? "مطلوب" : "Must"}:{" "}
+              {toPercent(data.metrics.mustPercent)}
             </div>
             <div className="rounded-2xl bg-white/10 px-3 py-2">
-              {lang === "ar" ? "إضافي" : "Nice"}: {toPercent(data.metrics.nicePercent)}
+              {lang === "ar" ? "إضافي" : "Nice"}:{" "}
+              {toPercent(data.metrics.nicePercent)}
             </div>
           </div>
         ) : null}
