@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
 
 import ScoreGauge from "@/components/ui/ScoreGauge";
 import {
@@ -11,8 +11,26 @@ import {
   type Analysis,
   type AnalysisMetrics,
 } from "@/services/api/analyses";
+import { jobsApi, type Job } from "@/services/api/jobs";
+import {
+  assistantApi,
+  type ExtractedJobFields,
+} from "@/services/api/assistant";
+import { Button } from "@/components/ui/Button";
 import { t } from "@/lib/i18n";
 import { useLang } from "@/lib/use-lang";
+
+const clampText = (value: string, max = 220) => {
+  if (!value) return "";
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+};
+
+const parseBulletLines = (text: string): string[] =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s•\-–\d.]+/, "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
 
 const riskCopy: Record<string, { ar: string; en: string }> = {
   must_threshold: {
@@ -56,10 +74,60 @@ export default function ResultDetail() {
   const params = useParams<{ id: string }>();
   const lang = useLang();
   const tt = useMemo(() => (key: string) => t(lang, key), [lang]);
+  const jobCopy = useMemo(
+    () =>
+      lang === "ar"
+        ? {
+            heading: "تفاصيل الوظيفة",
+            summaryFallback: "لا يوجد ملخص مختصر للوصف.",
+            level: "المستوى",
+            experience: "الخبرة المطلوبة",
+            contract: "نوع العقد",
+            location: "الموقع",
+            languages: "اللغات المطلوبة",
+            languagesLoading: "جارٍ تحليل اللغات...",
+            languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
+            aiTitle: "ملخص سريع بالذكاء الاصطناعي",
+            aiButton: "ولّد النقاط",
+            aiLoading: "جارٍ التوليد...",
+            aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
+            jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
+            jobError: "تعذّر تحميل تفاصيل الوظيفة.",
+            aiErrorPrefix: "تعذّر التوليد: ",
+          }
+        : {
+            heading: "Job overview",
+            summaryFallback: "No short summary was extracted.",
+            level: "Level",
+            experience: "Required experience",
+            contract: "Contract",
+            location: "Location",
+            languages: "Languages",
+            languagesLoading: "Detecting languages...",
+            languagesFallback: "No explicit languages were mentioned in the brief.",
+            aiTitle: "AI quick highlights",
+            aiButton: "Generate highlights",
+            aiLoading: "Generating...",
+            aiEmpty: "Click the button to generate three bullet highlights.",
+            jobLoading: "Loading job details...",
+            jobError: "Failed to load job details.",
+            aiErrorPrefix: "Could not generate: ",
+          },
+    [lang]
+  );
 
   const [data, setData] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
+  const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
+  const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
+  const [quickSummary, setQuickSummary] = useState<string[]>([]);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickLoading, setQuickLoading] = useState(false);
 
   useEffect(() => {
     if (!params?.id) return;
@@ -74,6 +142,76 @@ export default function ResultDetail() {
       })
       .finally(() => setLoading(false));
   }, [params?.id]);
+
+  useEffect(() => {
+    if (!data?.jobId) return;
+    let alive = true;
+    setJob(null);
+    setJobError(null);
+    setJobFields(null);
+    setQuickSummary([]);
+    setQuickError(null);
+    setJobLoading(true);
+    jobsApi
+      .get(data.jobId)
+      .then((res) => {
+        if (!alive) return;
+        setJob(res);
+      })
+      .catch((err: any) => {
+        if (!alive) return;
+        setJobError(err?.message || "failed to load job");
+      })
+      .finally(() => {
+        if (alive) setJobLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [data?.jobId]);
+
+  useEffect(() => {
+    if (!job?.description?.trim()) {
+      setJobFields(null);
+      setQuickSummary([]);
+      return;
+    }
+    let alive = true;
+    setJobFieldsLoading(true);
+    setJobFieldsError(null);
+    assistantApi
+      .extractFields(job.description)
+      .then((res) => {
+        if (!alive) return;
+        setJobFields(res);
+      })
+      .catch((err: any) => {
+        if (!alive) return;
+        setJobFieldsError(err?.message || "failed to analyse job");
+        setJobFields(null);
+      })
+      .finally(() => {
+        if (alive) setJobFieldsLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [job?.id, job?.description]);
+
+  const handleQuickSummary = async () => {
+    if (!job?.description?.trim()) return;
+    setQuickLoading(true);
+    setQuickError(null);
+    try {
+      const res = await assistantApi.quickSuggestions("ملخص", job.description);
+      setQuickSummary(parseBulletLines(res.output));
+    } catch (err: any) {
+      setQuickError(err?.message || "failed to generate");
+      setQuickSummary([]);
+    } finally {
+      setQuickLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -137,6 +275,141 @@ export default function ResultDetail() {
           ) : null}
         </div>
       </header>
+
+      {jobLoading ? (
+        <section className="rounded-3xl border border-[#FFE4C8] bg-white/85 p-6 text-sm text-[#2F3A4A]/70 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white/70">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" /> {jobCopy.jobLoading}
+          </div>
+        </section>
+      ) : jobError ? (
+        <section className="rounded-3xl border border-red-200 bg-red-50/70 p-6 text-sm text-red-700">
+          {jobCopy.jobError}
+          <div className="mt-2 text-xs opacity-80">{jobError}</div>
+        </section>
+      ) : job ? (
+        <section className="space-y-4 rounded-3xl border border-[#FFE4C8] bg-white/85 p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex-1 space-y-2">
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[#2F3A4A]/60 dark:text-white/60">
+                {jobCopy.heading}
+              </div>
+              <h2 className="text-xl font-semibold text-[#2F3A4A] dark:text-white">
+                {job.title}
+              </h2>
+              <p className="text-sm leading-relaxed text-[#2F3A4A]/70 dark:text-white/70">
+                {jobFields?.summary?.trim()
+                  ? jobFields.summary.trim()
+                  : clampText(job.description || "", 260) || jobCopy.summaryFallback}
+              </p>
+            </div>
+            <div className="grid w-full max-w-sm gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-[#FFB26B]/50 bg-white/70 px-4 py-3 text-sm dark:border-white/20 dark:bg-white/5">
+                <div className="text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
+                  {jobCopy.level}
+                </div>
+                <div className="text-base font-semibold text-[#D85E00] dark:text-white">
+                  {jobFields?.level?.trim() || "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#FFB26B]/50 bg-white/70 px-4 py-3 text-sm dark:border-white/20 dark:bg-white/5">
+                <div className="text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
+                  {jobCopy.experience}
+                </div>
+                <div className="text-base font-semibold text-[#D85E00] dark:text-white">
+                  {jobFields?.required_experience_years?.trim() || "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#FFB26B]/50 bg-white/70 px-4 py-3 text-sm dark:border-white/20 dark:bg-white/5">
+                <div className="text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
+                  {jobCopy.contract}
+                </div>
+                <div className="text-base font-semibold text-[#D85E00] dark:text-white">
+                  {jobFields?.contract_types?.length
+                    ? jobFields.contract_types.join(" • ")
+                    : jobFields?.remote?.trim()
+                      ? jobFields.remote.trim()
+                      : "—"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[#FFB26B]/50 bg-white/70 px-4 py-3 text-sm dark:border-white/20 dark:bg-white/5">
+                <div className="text-[11px] text-[#2F3A4A]/60 dark:text-white/60">
+                  {jobCopy.location}
+                </div>
+                <div className="text-base font-semibold text-[#D85E00] dark:text-white">
+                  {jobFields?.location?.trim() || "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#FFE4C8] bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="text-[11px] uppercase tracking-[0.3em] text-[#2F3A4A]/60 dark:text-white/60">
+              {jobCopy.languages}
+            </div>
+            {jobFieldsLoading ? (
+              <div className="mt-3 flex items-center gap-2 text-xs text-[#2F3A4A]/60 dark:text-white/60">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> {jobCopy.languagesLoading}
+              </div>
+            ) : jobFieldsError ? (
+              <div className="mt-3 rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-xs text-red-700">
+                {jobFieldsError}
+              </div>
+            ) : jobFields?.languages?.length ? (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {jobFields.languages.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] dark:bg-white/10 dark:text-white/80"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-[#2F3A4A]/60 dark:text-white/60">
+                {jobCopy.languagesFallback}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-[#FFE4C8] bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#D85E00] dark:text-white">
+                <Sparkles className="h-4 w-4" /> {jobCopy.aiTitle}
+              </div>
+              <Button
+                onClick={handleQuickSummary}
+                disabled={quickLoading || !job?.description}
+                className="inline-flex items-center gap-2 rounded-full border-[#FFB26B]/60 bg-[#FFF2E8] px-4 py-2 text-xs font-semibold text-[#D85E00] hover:bg-[#FFD4A8] disabled:opacity-60"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {quickLoading ? jobCopy.aiLoading : jobCopy.aiButton}
+              </Button>
+            </div>
+            <div className="mt-3 text-xs text-[#2F3A4A]/70 dark:text-white/70">
+              {quickLoading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {jobCopy.aiLoading}
+                </div>
+              ) : quickError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-red-700">
+                  {jobCopy.aiErrorPrefix}
+                  <span className="font-normal">{quickError}</span>
+                </div>
+              ) : quickSummary.length ? (
+                <ul className="list-disc space-y-1 ps-5">
+                  {quickSummary.map((item, idx) => (
+                    <li key={`${item}-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-[#2F3A4A]/60 dark:text-white/60">{jobCopy.aiEmpty}</div>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-3xl border border-[#FFE4C8] bg-white/85 p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
         <div className="grid gap-6 sm:grid-cols-[220px_1fr]">
