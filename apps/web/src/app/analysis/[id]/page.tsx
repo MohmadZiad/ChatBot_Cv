@@ -1,9 +1,14 @@
 // apps/web/src/app/analysis/[id]/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useParams } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type MotionProps } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
@@ -33,8 +38,6 @@ import { Button } from "@/components/ui/Button";
 import { t } from "@/lib/i18n";
 import { useLang } from "@/lib/use-lang";
 
-/* ------------------------- helpers / utilities ------------------------- */
-
 const clampText = (value: string, max = 220) => {
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max)}…` : value;
@@ -50,18 +53,16 @@ const parseBulletLines = (text: string): string[] =>
 const LANGUAGE_HINTS: Array<{ label: string; patterns: RegExp[] }> = [
   {
     label: "العربية",
-    patterns: [
-      /\bArabic\b/i,
-      /\bArabic language\b/i,
-      /\bالعربية\b/,
-      /\bعربي\b/,
-    ],
+    patterns: [/\bArabic\b/i, /\bArabic language\b/i, /\bالعربية\b/, /\bعربي\b/],
   },
   {
     label: "الإنجليزية",
     patterns: [/\bEnglish\b/i, /\bالإنجليزية\b/, /\bانجليزي\b/],
   },
-  { label: "الفرنسية", patterns: [/\bFrench\b/i, /\bالفرنسية\b/, /\bفرنسي\b/] },
+  {
+    label: "الفرنسية",
+    patterns: [/\bFrench\b/i, /\bالفرنسية\b/, /\bفرنسي\b/],
+  },
   {
     label: "الألمانية",
     patterns: [/\bGerman\b/i, /\bالألمانية\b/, /\bألماني\b/],
@@ -81,8 +82,9 @@ const detectLanguages = (text: string | null | undefined): string[] => {
   if (!normalized) return [];
   const results = new Set<string>();
   for (const hint of LANGUAGE_HINTS) {
-    if (hint.patterns.some((re) => re.test(normalized)))
+    if (hint.patterns.some((re) => re.test(normalized))) {
       results.add(hint.label);
+    }
   }
   return Array.from(results);
 };
@@ -117,8 +119,7 @@ const toScore10 = (value: number | null | undefined) => {
   return raw > 10 ? raw / 10 : raw;
 };
 
-const formatScore10 = (value: number | null | undefined) =>
-  toScore10(value).toFixed(2);
+const formatScore10 = (value: number | null | undefined) => toScore10(value).toFixed(2);
 
 const formatDate = (value: string | null | undefined, lang: string) => {
   if (!value) return null;
@@ -134,10 +135,10 @@ const formatDate = (value: string | null | undefined, lang: string) => {
   }
 };
 
-const motionCardProps = {
+const motionCardProps: MotionProps = {
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: "easeOut" },
+  transition: { duration: 0.35, ease: [0.25, 0.1, 0.25, 1] },
 };
 
 const getErrorMessage = (err: unknown, fallback: string) => {

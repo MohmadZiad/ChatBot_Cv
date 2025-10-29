@@ -8,6 +8,12 @@ export type ReqItem = {
   weight: number;
 };
 
+type CategoryConfig = {
+  id: string;
+  label: Record<Lang, string>;
+  items: readonly string[];
+};
+
 const CATEGORY_DATA = [
   {
     id: "tech",
@@ -240,7 +246,7 @@ const CATEGORY_DATA = [
       "Emergency Response",
     ],
   },
-] as const;
+] satisfies ReadonlyArray<CategoryConfig>;
 
 type CategoryId = (typeof CATEGORY_DATA)[number]["id"];
 
@@ -303,8 +309,9 @@ export default function RequirementPicker({ onAdd, lang = "ar" }: Props) {
     ],
     [labels.weight]
   );
-  const direction = lang === "ar" ? "rtl" : "ltr";
-  const alignment = lang === "ar" ? "text-right" : "text-left";
+  const activeLang: Lang = lang ?? "ar";
+  const direction = activeLang === "ar" ? "rtl" : "ltr";
+  const alignment = activeLang === "ar" ? "text-right" : "text-left";
   const [q, setQ] = useState("");
   const [must, setMust] = useState(true);
   const [weight, setWeight] = useState(1);
@@ -347,7 +354,7 @@ export default function RequirementPicker({ onAdd, lang = "ar" }: Props) {
                     : "border-[var(--color-border)] bg-[var(--surface-soft)]/70 text-[var(--color-text-muted)] hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
                 }`}
               >
-                {cat.label?.[lang] ?? cat.label.ar ?? cat.label.en}
+                {cat.label[activeLang] ?? cat.label.ar}
               </button>
             );
           })}

@@ -39,11 +39,18 @@ export async function ensureCvChunks(cvId: string) {
 }
 
 export async function ensureCvEmbeddings(cvId: string) {
-  // هات الشُنكس اللي لسه ما إلها embedding أو اللي خُزنت بدون متجه
+  // صحّح أي سجلات قديمة تحتوي على embedding فارغ لكنها معلّمة كـ hasEmbedding=true
+  await prisma.$executeRaw`
+    UPDATE "CVChunk"
+    SET "hasEmbedding" = false
+    WHERE "cvId" = ${cvId} AND "embedding" IS NULL
+  `;
+
+  // هات الشُنكس اللي لسه ما إلها embedding
   const chunks = await prisma.cVChunk.findMany({
     where: {
       cvId,
-      OR: [{ hasEmbedding: false }, { embedding: null }],
+      hasEmbedding: false,
     },
     orderBy: { id: "asc" },
     select: { id: true, content: true },

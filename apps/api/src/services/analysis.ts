@@ -1,6 +1,7 @@
 // apps/api/src/services/analysis.ts
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
+import type { Analysis as PrismaAnalysis } from "@prisma/client";
 import { embedTexts, chatJson } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvChunks, ensureCvEmbeddings } from "./embeddings.js";
@@ -280,6 +281,23 @@ export async function runAnalysis(jobId: string, cvId: string) {
   };
 }
 
+type AnalysisComputed = Awaited<ReturnType<typeof runAnalysis>>;
+
+function toComputedAnalysis(
+  row: PrismaAnalysis | AnalysisComputed | null
+): AnalysisComputed | null {
+  if (!row) return null;
+  const base = row as any;
+  return {
+    ...row,
+    score: Number(base.score ?? 0),
+    breakdown: Array.isArray(base.breakdown) ? base.breakdown : [],
+    evidence: Array.isArray(base.evidence) ? base.evidence : [],
+    gaps: base.gaps ?? {},
+    metrics: base.metrics ?? {},
+  };
+}
+
 type Lang = "ar" | "en";
 
 function meanVector(list: number[][]): number[] {
@@ -501,10 +519,10 @@ export async function improvementSuggestions(
     orderBy: { createdAt: "desc" },
   });
 
-  let analysis = latest;
+  let analysis = toComputedAnalysis(latest);
   if (!analysis) {
     try {
-      analysis = await runAnalysis(jobId, cvId);
+      analysis = toComputedAnalysis(await runAnalysis(jobId, cvId));
     } catch (err: any) {
       if (err?.code === "NO_CV_TEXT" || err?.code === "NO_JOB_REQUIREMENTS") {
         return {
@@ -549,7 +567,8 @@ export async function improvementSuggestions(
     };
   }
 
-  const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
+  const metrics =
+    serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
 
   const missingMust: string[] = metrics?.missingMust || [];
   const improvement: string[] = metrics?.improvement || [];
@@ -596,8 +615,8 @@ export async function improvementSuggestions(
           1
         )}% of must-have requirements.`;
 
-  const breakdownRows = Array.isArray((analysis as any)?.breakdown)
-    ? ((analysis as any).breakdown as any[])
+  const breakdownRows = Array.isArray(analysis.breakdown)
+    ? analysis.breakdown
     : [];
   const lowlights = breakdownRows
     .filter((row) => Number(row?.score10 ?? 0) < 7)
