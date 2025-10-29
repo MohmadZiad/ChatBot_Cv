@@ -49,6 +49,7 @@ export default function RootLayout({
       </head>
 
       <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh text-foreground`}
       >
         <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
