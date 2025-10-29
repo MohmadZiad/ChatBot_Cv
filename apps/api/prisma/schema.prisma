@@ -63,7 +63,7 @@ model CVChunk {
 
   section    String
   content    String
-  embedding  Unsupported("vector")?   // سنحوّلها عبر SQL إلى vector(1536)
+  embedding  Unsupported("vector")?   // vector(3072)
   tokenCount Int?
   hasEmbedding Boolean @default(false) // <== جديد
 

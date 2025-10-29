@@ -63,8 +63,8 @@ function gapsFrom(perReq: any[]) {
   return { mustHaveMissing: missing, improve };
 }
 
-const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
-const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
+const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-large";
+const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o";
 
 export async function runAnalysis(jobId: string, cvId: string) {
   await ensureCvChunks(cvId);

@@ -1194,7 +1194,7 @@ export default function AIConsole() {
           <div className="space-y-2 text-xs text-[var(--color-text-muted)]">
             <div className="inline-flex items-center gap-2 rounded-full bg-[var(--color-secondary)]/10 px-3 py-1 font-medium text-[var(--color-secondary)]">
               <ShieldCheck className="h-3.5 w-3.5" />
-              gpt-4o-mini + text-embedding-3-small
+              gpt-4o + text-embedding-3-large
             </div>
             {result?.id && (
               <button

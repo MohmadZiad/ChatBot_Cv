@@ -4,8 +4,8 @@ import OpenAI from "openai";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 // ثبّت الأسماء نفسها في كل المشروع
-const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
-const CHAT_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
+const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-large";
+const CHAT_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o";
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";

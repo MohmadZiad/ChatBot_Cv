@@ -21,7 +21,7 @@ const heroCopy = {
     badge: "منصة الذكاء الوظيفي",
     headline: "مساعد توظيف ثنائي اللغة يعتمد على الذكاء الاصطناعي",
     description:
-      "وحّد رحلة التحليل من توصيف الوظيفة إلى مقارنة السير الذاتية. خطوة بخطوة مع دعم العربية والإنجليزية ونماذج gpt-4o-mini + text-embedding-3-small.",
+      "وحّد رحلة التحليل من توصيف الوظيفة إلى مقارنة السير الذاتية. خطوة بخطوة مع دعم العربية والإنجليزية ونماذج gpt-4o + text-embedding-3-large",
     homeButton: "لوحة التحليل الذكية",
     workflowButton: "رحلة التوظيف",
     helperHint: "جاهز للمقارنة والتصدير من صفحة النتائج.",
@@ -30,7 +30,7 @@ const heroCopy = {
     badge: "AI Talent Platform",
     headline: "A bilingual AI talent assistant powered by intelligence",
     description:
-      "Unify the hiring journey from job briefs to CV comparisons. Step-by-step with Arabic and English support and gpt-4o-mini + text-embedding-3-small.",
+      "Unify the hiring journey from job briefs to CV comparisons. Step-by-step with Arabic and English support and gpt-4o+ text-embedding-3-large.",
     homeButton: "AI intelligence console",
     workflowButton: "Talent workflow",
     helperHint: "Ready to compare and export from the results page.",
