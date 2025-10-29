@@ -136,6 +136,27 @@ export async function analysesRoute(app: FastifyInstance) {
     }));
   });
 
+  // GET /api/analyses/by-job/:jobId
+  app.get("/by-job/:jobId", async (req) => {
+    const { jobId } = req.params as any;
+    const list = await prisma.analysis.findMany({
+      where: { jobId },
+      orderBy: [{ score: "desc" }, { createdAt: "desc" }],
+      include: {
+        cv: {
+          select: { id: true, originalFilename: true, createdAt: true },
+        },
+      },
+    });
+
+    return list.map((a) => ({
+      ...a,
+      score: a.score ? Number(a.score) : null,
+      createdAt: a.createdAt.toISOString(),
+      updatedAt: a.updatedAt.toISOString(),
+    }));
+  });
+
   app.post("/compare", async (req, reply) => {
     try {
       const { cvIds = [] } = (await req.body) as any;
