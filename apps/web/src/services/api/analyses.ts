@@ -74,35 +74,44 @@ type RawAnalysis = Partial<Analysis> & {
 
 function normalizeBreakdown(input: unknown): PerRequirement[] {
   if (!Array.isArray(input)) return [];
-  return input
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const record = entry as Record<string, unknown>;
-      const similarity = toNumber(record.similarity);
-      const score10 = toNumber(record.score10 ?? similarity * 10);
-      const bestChunkIdRaw = record.bestChunkId;
-      const bestChunkId =
-        bestChunkIdRaw === null || bestChunkIdRaw === undefined
-          ? null
-          : toNumber(bestChunkIdRaw);
+  return (
+    input
+      // نجبر map يرجّع PerRequirement | null عشان predicate في filter يكون صالح
+      .map<PerRequirement | null>((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const record = entry as Record<string, unknown>;
+        const similarity = toNumber(record.similarity);
+        const score10 = toNumber(record.score10 ?? similarity * 10);
 
-      return {
-        requirement: String(record.requirement ?? ""),
-        mustHave: Boolean(record.mustHave),
-        weight: toNumber(record.weight, 1),
-        similarity,
-        score10,
-        bestChunkId,
-        bestChunk: record.bestChunk && typeof record.bestChunk === "object"
-          ? {
-              id: toNumber((record.bestChunk as any).id),
-              section: String((record.bestChunk as any).section ?? ""),
-              excerpt: String((record.bestChunk as any).excerpt ?? ""),
-            }
-          : null,
-      } satisfies PerRequirement;
-    })
-    .filter((item): item is PerRequirement => Boolean(item?.requirement));
+        const bestChunkIdRaw = record.bestChunkId;
+        const bestChunkId =
+          bestChunkIdRaw === null || bestChunkIdRaw === undefined
+            ? null
+            : toNumber(bestChunkIdRaw);
+
+        const obj: PerRequirement = {
+          requirement: String(record.requirement ?? ""),
+          mustHave: Boolean(record.mustHave),
+          weight: toNumber(record.weight, 1),
+          similarity,
+          score10,
+          bestChunkId,
+          bestChunk:
+            record.bestChunk && typeof record.bestChunk === "object"
+              ? {
+                  id: toNumber((record.bestChunk as any).id),
+                  section: String((record.bestChunk as any).section ?? ""),
+                  excerpt: String((record.bestChunk as any).excerpt ?? ""),
+                }
+              : null,
+        };
+
+        // لو مافي requirement نرجّع null عشان يتصفّى
+        if (!obj.requirement) return null;
+        return obj;
+      })
+      .filter((item): item is PerRequirement => item !== null)
+  );
 }
 
 function normalizeMetrics(
@@ -143,13 +152,13 @@ function normalizeMetrics(
     missingMust:
       toStringArray(record.missingMust).length > 0
         ? toStringArray(record.missingMust)
-        : fallback?.mustHaveMissing ?? [],
+        : (fallback?.mustHaveMissing ?? []),
     improvement:
       toStringArray(record.improvement).length > 0
         ? toStringArray(record.improvement)
         : toStringArray((record as any).improve).length > 0
           ? toStringArray((record as any).improve)
-          : fallback?.improve ?? [],
+          : (fallback?.improve ?? []),
     topStrengths: topStrengthsRaw
       .map((item) => {
         if (!item || typeof item !== "object") return null;
@@ -229,15 +238,18 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
     jobId: String(input.jobId ?? ""),
     cvId: String(input.cvId ?? ""),
     status: String(input.status ?? "unknown"),
-    score: input.score === null || input.score === undefined
-      ? metrics?.weightedScore ?? null
-      : toNumber(input.score),
+    score:
+      input.score === null || input.score === undefined
+        ? (metrics?.weightedScore ?? null)
+        : toNumber(input.score),
     breakdown,
     gaps,
     metrics,
     evidence: normalizeEvidence(input.evidence),
     model: input.model ? String(input.model) : null,
-    createdAt: input.createdAt ? String(input.createdAt) : new Date().toISOString(),
+    createdAt: input.createdAt
+      ? String(input.createdAt)
+      : new Date().toISOString(),
     updatedAt: input.updatedAt ? String(input.updatedAt) : null,
   };
 }
@@ -261,60 +273,59 @@ export const analysesApi = {
     return normalizeList(res);
   },
   compare(input: { cvIds: string[] }) {
-    return http.post<
-      {
-        ok: boolean;
-        pairs: { a: string; b: string; similarity: number }[];
-        meta: { id: string; name: string; createdAt: string | null; lang?: string | null }[];
-        insights: string[];
-      }
-    >("/analyses/compare", input);
+    return http.post<{
+      ok: boolean;
+      pairs: { a: string; b: string; similarity: number }[];
+      meta: {
+        id: string;
+        name: string;
+        createdAt: string | null;
+        lang?: string | null;
+      }[];
+      insights: string[];
+    }>("/analyses/compare", input);
   },
   pickBest(input: { jobId: string; cvIds: string[]; top?: number }) {
-    return http.post<
-      {
-        ok: boolean;
-        job: { id: string; title: string };
-        ranking: {
-          cvId: string;
-          fileName: string;
-          score: number;
-          mustPercent: number;
-          nicePercent: number;
-          gatePassed: boolean;
-          missingMust: string[];
-          improvement: string[];
-        }[];
-        top: {
-          cvId: string;
-          fileName: string;
-          score: number;
-          mustPercent: number;
-          nicePercent: number;
-          gatePassed: boolean;
-          missingMust: string[];
-          improvement: string[];
-        }[];
-        summary: string[];
-      }
-    >("/analyses/pick-best", input);
+    return http.post<{
+      ok: boolean;
+      job: { id: string; title: string };
+      ranking: {
+        cvId: string;
+        fileName: string;
+        score: number;
+        mustPercent: number;
+        nicePercent: number;
+        gatePassed: boolean;
+        missingMust: string[];
+        improvement: string[];
+      }[];
+      top: {
+        cvId: string;
+        fileName: string;
+        score: number;
+        mustPercent: number;
+        nicePercent: number;
+        gatePassed: boolean;
+        missingMust: string[];
+        improvement: string[];
+      }[];
+      summary: string[];
+    }>("/analyses/pick-best", input);
   },
   improve(input: { jobId: string; cvId: string; lang?: "ar" | "en" }) {
-    return http.post<
-      {
-        ok: boolean;
-        summary: string;
-        suggestions: string[];
-        metrics: {
-          score: number;
-          mustPercent: number;
-          nicePercent: number;
-          missingMust: string[];
-          improvement: string[];
-        };
-        cv: { id: string; name: string };
-        job: { id: string; title: string };
-      }
-    >("/analyses/improve", input);
+    return http.post<{
+      ok: boolean;
+      summary: string;
+      suggestions: string[];
+      metrics: {
+        score: number;
+        mustPercent: number;
+        nicePercent: number;
+        missingMust: string[];
+        improvement: string[];
+      };
+      cv: { id: string; name: string };
+      job: { id: string; title: string };
+    }>("/analyses/improve", input);
   },
 };
