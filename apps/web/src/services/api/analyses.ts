@@ -61,6 +61,21 @@ export type Analysis = {
   updatedAt?: string | null;
 };
 
+export type ImproveResponse = {
+  ok: boolean;
+  summary: string;
+  suggestions: string[];
+  metrics: {
+    score: number;
+    mustPercent: number;
+    nicePercent: number;
+    missingMust: string[];
+    improvement: string[];
+  };
+  cv: { id: string; name: string };
+  job: { id: string; title: string };
+};
+
 type RawAnalysis = Partial<Analysis> & {
   ok?: boolean;
   breakdown?: unknown;
@@ -74,44 +89,35 @@ type RawAnalysis = Partial<Analysis> & {
 
 function normalizeBreakdown(input: unknown): PerRequirement[] {
   if (!Array.isArray(input)) return [];
-  return (
-    input
-      // نجبر map يرجّع PerRequirement | null عشان predicate في filter يكون صالح
-      .map<PerRequirement | null>((entry) => {
-        if (!entry || typeof entry !== "object") return null;
-        const record = entry as Record<string, unknown>;
-        const similarity = toNumber(record.similarity);
-        const score10 = toNumber(record.score10 ?? similarity * 10);
+  return input
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const record = entry as Record<string, unknown>;
+      const similarity = toNumber(record.similarity);
+      const score10 = toNumber(record.score10 ?? similarity * 10);
+      const bestChunkIdRaw = record.bestChunkId;
+      const bestChunkId =
+        bestChunkIdRaw === null || bestChunkIdRaw === undefined
+          ? null
+          : toNumber(bestChunkIdRaw);
 
-        const bestChunkIdRaw = record.bestChunkId;
-        const bestChunkId =
-          bestChunkIdRaw === null || bestChunkIdRaw === undefined
-            ? null
-            : toNumber(bestChunkIdRaw);
-
-        const obj: PerRequirement = {
-          requirement: String(record.requirement ?? ""),
-          mustHave: Boolean(record.mustHave),
-          weight: toNumber(record.weight, 1),
-          similarity,
-          score10,
-          bestChunkId,
-          bestChunk:
-            record.bestChunk && typeof record.bestChunk === "object"
-              ? {
-                  id: toNumber((record.bestChunk as any).id),
-                  section: String((record.bestChunk as any).section ?? ""),
-                  excerpt: String((record.bestChunk as any).excerpt ?? ""),
-                }
-              : null,
-        };
-
-        // لو مافي requirement نرجّع null عشان يتصفّى
-        if (!obj.requirement) return null;
-        return obj;
-      })
-      .filter((item): item is PerRequirement => item !== null)
-  );
+      return {
+        requirement: String(record.requirement ?? ""),
+        mustHave: Boolean(record.mustHave),
+        weight: toNumber(record.weight, 1),
+        similarity,
+        score10,
+        bestChunkId,
+        bestChunk: record.bestChunk && typeof record.bestChunk === "object"
+          ? {
+              id: toNumber((record.bestChunk as any).id),
+              section: String((record.bestChunk as any).section ?? ""),
+              excerpt: String((record.bestChunk as any).excerpt ?? ""),
+            }
+          : null,
+      } satisfies PerRequirement;
+    })
+    .filter((item): item is PerRequirement => Boolean(item?.requirement));
 }
 
 function normalizeMetrics(
@@ -152,13 +158,13 @@ function normalizeMetrics(
     missingMust:
       toStringArray(record.missingMust).length > 0
         ? toStringArray(record.missingMust)
-        : (fallback?.mustHaveMissing ?? []),
+        : fallback?.mustHaveMissing ?? [],
     improvement:
       toStringArray(record.improvement).length > 0
         ? toStringArray(record.improvement)
         : toStringArray((record as any).improve).length > 0
           ? toStringArray((record as any).improve)
-          : (fallback?.improve ?? []),
+          : fallback?.improve ?? [],
     topStrengths: topStrengthsRaw
       .map((item) => {
         if (!item || typeof item !== "object") return null;
@@ -238,18 +244,15 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
     jobId: String(input.jobId ?? ""),
     cvId: String(input.cvId ?? ""),
     status: String(input.status ?? "unknown"),
-    score:
-      input.score === null || input.score === undefined
-        ? (metrics?.weightedScore ?? null)
-        : toNumber(input.score),
+    score: input.score === null || input.score === undefined
+      ? metrics?.weightedScore ?? null
+      : toNumber(input.score),
     breakdown,
     gaps,
     metrics,
     evidence: normalizeEvidence(input.evidence),
     model: input.model ? String(input.model) : null,
-    createdAt: input.createdAt
-      ? String(input.createdAt)
-      : new Date().toISOString(),
+    createdAt: input.createdAt ? String(input.createdAt) : new Date().toISOString(),
     updatedAt: input.updatedAt ? String(input.updatedAt) : null,
   };
 }
@@ -257,6 +260,36 @@ export function normalizeAnalysis(input: RawAnalysis): Analysis {
 function normalizeList(list: RawAnalysis[] | undefined | null): Analysis[] {
   if (!Array.isArray(list)) return [];
   return list.map((item) => normalizeAnalysis(item));
+}
+
+function normalizeImprove(input: any): ImproveResponse {
+  const suggestions = Array.isArray(input?.suggestions)
+    ? input.suggestions.filter((item: unknown): item is string =>
+        typeof item === "string" && item.trim().length > 0
+      )
+    : [];
+
+  const metrics = input?.metrics ?? {};
+  return {
+    ok: Boolean(input?.ok ?? true),
+    summary: String(input?.summary ?? ""),
+    suggestions,
+    metrics: {
+      score: toNumber(metrics?.score, 0),
+      mustPercent: toNumber(metrics?.mustPercent, 0),
+      nicePercent: toNumber(metrics?.nicePercent, 0),
+      missingMust: toStringArray(metrics?.missingMust),
+      improvement: toStringArray(metrics?.improvement),
+    },
+    cv: {
+      id: String(input?.cv?.id ?? ""),
+      name: String(input?.cv?.name ?? input?.cv?.originalFilename ?? ""),
+    },
+    job: {
+      id: String(input?.job?.id ?? ""),
+      title: String(input?.job?.title ?? ""),
+    },
+  };
 }
 
 export const analysesApi = {
@@ -313,19 +346,8 @@ export const analysesApi = {
     }>("/analyses/pick-best", input);
   },
   improve(input: { jobId: string; cvId: string; lang?: "ar" | "en" }) {
-    return http.post<{
-      ok: boolean;
-      summary: string;
-      suggestions: string[];
-      metrics: {
-        score: number;
-        mustPercent: number;
-        nicePercent: number;
-        missingMust: string[];
-        improvement: string[];
-      };
-      cv: { id: string; name: string };
-      job: { id: string; title: string };
-    }>("/analyses/improve", input);
+    return http
+      .post("/analyses/improve", input)
+      .then((res) => normalizeImprove(res));
   },
 };
