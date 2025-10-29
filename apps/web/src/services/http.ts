@@ -10,7 +10,7 @@ const ORIGIN =
   normalizeOrigin(process.env.NEXT_PUBLIC_API) ||
   "http://localhost:4000";
 
-const API = `${ORIGIN}/api`;
+const API = ORIGIN.endsWith("/api") ? ORIGIN : `${ORIGIN}/api`;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
