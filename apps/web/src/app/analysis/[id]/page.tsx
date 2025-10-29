@@ -1,12 +1,7 @@
 // apps/web/src/app/analysis/[id]/page.tsx
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -38,6 +33,8 @@ import { Button } from "@/components/ui/Button";
 import { t } from "@/lib/i18n";
 import { useLang } from "@/lib/use-lang";
 
+/* ------------------------- helpers / utilities ------------------------- */
+
 const clampText = (value: string, max = 220) => {
   if (!value) return "";
   return value.length > max ? `${value.slice(0, max)}…` : value;
@@ -53,16 +50,18 @@ const parseBulletLines = (text: string): string[] =>
 const LANGUAGE_HINTS: Array<{ label: string; patterns: RegExp[] }> = [
   {
     label: "العربية",
-    patterns: [/\bArabic\b/i, /\bArabic language\b/i, /\bالعربية\b/, /\bعربي\b/],
+    patterns: [
+      /\bArabic\b/i,
+      /\bArabic language\b/i,
+      /\bالعربية\b/,
+      /\bعربي\b/,
+    ],
   },
   {
     label: "الإنجليزية",
     patterns: [/\bEnglish\b/i, /\bالإنجليزية\b/, /\bانجليزي\b/],
   },
-  {
-    label: "الفرنسية",
-    patterns: [/\bFrench\b/i, /\bالفرنسية\b/, /\bفرنسي\b/],
-  },
+  { label: "الفرنسية", patterns: [/\bFrench\b/i, /\bالفرنسية\b/, /\bفرنسي\b/] },
   {
     label: "الألمانية",
     patterns: [/\bGerman\b/i, /\bالألمانية\b/, /\bألماني\b/],
@@ -82,9 +81,8 @@ const detectLanguages = (text: string | null | undefined): string[] => {
   if (!normalized) return [];
   const results = new Set<string>();
   for (const hint of LANGUAGE_HINTS) {
-    if (hint.patterns.some((re) => re.test(normalized))) {
+    if (hint.patterns.some((re) => re.test(normalized)))
       results.add(hint.label);
-    }
   }
   return Array.from(results);
 };
@@ -119,7 +117,8 @@ const toScore10 = (value: number | null | undefined) => {
   return raw > 10 ? raw / 10 : raw;
 };
 
-const formatScore10 = (value: number | null | undefined) => toScore10(value).toFixed(2);
+const formatScore10 = (value: number | null | undefined) =>
+  toScore10(value).toFixed(2);
 
 const formatDate = (value: string | null | undefined, lang: string) => {
   if (!value) return null;
@@ -176,10 +175,13 @@ const bubbleVariants = {
   exit: { opacity: 0, y: -6, scale: 0.98 },
 };
 
+/* --------------------------------- page -------------------------------- */
+
 export default function ResultDetail() {
   const params = useParams<{ id: string }>();
   const lang = useLang();
   const tt = useMemo(() => (key: string) => t(lang, key), [lang]);
+
   const jobCopy = useMemo(
     () =>
       lang === "ar"
@@ -195,11 +197,22 @@ export default function ResultDetail() {
             languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
             aiTitle: "ملخص سريع بالذكاء الاصطناعي",
             aiButton: "ولّد النقاط",
+            aiRegenerate: "إعادة التوليد",
+            aiCopy: "نسخ",
             aiLoading: "جارٍ التوليد...",
             aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
             jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
             jobError: "تعذّر تحميل تفاصيل الوظيفة.",
             aiErrorPrefix: "تعذّر التوليد: ",
+            coachTitle: "مساعد التحسين",
+            coachButton: "حلّل السيرة",
+            coachRegenerate: "تحليل جديد",
+            coachCopy: "انسخ",
+            coachEmpty: "اضغط للحصول على تحسينات ذكية بناءً على هذه السيرة.",
+            coachLoading: "نحلّل السيرة...",
+            coachError: "تعذّر توليد التحسينات.",
+            relatedTitle: "مقارنة التحليلات",
+            relatedEmpty: "لم يتم تشغيل تحليلات أخرى لهذه الوظيفة بعد.",
           }
         : {
             heading: "Job overview",
@@ -210,215 +223,57 @@ export default function ResultDetail() {
             location: "Location",
             languages: "Languages",
             languagesLoading: "Detecting languages...",
-            languagesFallback: "No explicit languages were mentioned in the brief.",
+            languagesFallback:
+              "No explicit languages were mentioned in the brief.",
             aiTitle: "AI quick highlights",
-            aiButton: "Generate highlights",
+            aiButton: "Generate",
+            aiRegenerate: "Regenerate",
+            aiCopy: "Copy",
             aiLoading: "Generating...",
-            aiEmpty: "Click the button to generate three bullet highlights.",
+            aiEmpty: "Tap the button to receive three laser-focused bullets.",
             jobLoading: "Loading job details...",
             jobError: "Failed to load job details.",
             aiErrorPrefix: "Could not generate: ",
+            coachTitle: "AI coach",
+            coachButton: "Analyse CV",
+            coachRegenerate: "Regenerate",
+            coachCopy: "Copy",
+            coachEmpty:
+              "Launch the coach to receive actionable improvements for this CV.",
+            coachLoading: "Thinking through the CV...",
+            coachError: "Could not fetch improvement tips.",
+            relatedTitle: "Comparison",
+            relatedEmpty: "No other analyses exist for this job yet.",
           },
     [lang]
   );
 
-  const jobCopy = useMemo(
-    () =>
-      lang === "ar"
-        ? {
-            heading: "تفاصيل الوظيفة",
-            summaryFallback: "لا يوجد ملخص مختصر للوصف.",
-            level: "المستوى",
-            experience: "الخبرة المطلوبة",
-            contract: "نوع العقد",
-            location: "الموقع",
-            languages: "اللغات المطلوبة",
-            languagesLoading: "جارٍ تحليل اللغات...",
-            languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
-            aiTitle: "ملخص سريع بالذكاء الاصطناعي",
-            aiButton: "ولّد النقاط",
-            aiRegenerate: "إعادة التوليد",
-            aiCopy: "نسخ",
-            aiLoading: "جارٍ التوليد...",
-            aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
-            jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
-            jobError: "تعذّر تحميل تفاصيل الوظيفة.",
-            aiErrorPrefix: "تعذّر التوليد: ",
-            coachTitle: "مساعد التحسين",
-            coachButton: "حلّل السيرة",
-            coachRegenerate: "تحليل جديد",
-            coachCopy: "انسخ",
-            coachEmpty: "اضغط للحصول على تحسينات ذكية بناءً على هذه السيرة.",
-            coachLoading: "نحلّل السيرة...",
-            coachError: "تعذّر توليد التحسينات.",
-            relatedTitle: "مقارنة التحليلات",
-            relatedEmpty: "لم يتم تشغيل تحليلات أخرى لهذه الوظيفة بعد.",
-          }
-        : {
-            heading: "Job overview",
-            summaryFallback: "No short summary was extracted.",
-            level: "Level",
-            experience: "Required experience",
-            contract: "Contract",
-            location: "Location",
-            languages: "Languages",
-            languagesLoading: "Detecting languages...",
-            languagesFallback: "No explicit languages were mentioned in the brief.",
-            aiTitle: "AI quick highlights",
-            aiButton: "Generate",
-            aiRegenerate: "Regenerate",
-            aiCopy: "Copy",
-            aiLoading: "Generating...",
-            aiEmpty: "Tap the button to receive three laser-focused bullets.",
-            jobLoading: "Loading job details...",
-            jobError: "Failed to load job details.",
-            aiErrorPrefix: "Could not generate: ",
-            coachTitle: "AI coach",
-            coachButton: "Analyse CV",
-            coachRegenerate: "Regenerate",
-            coachCopy: "Copy",
-            coachEmpty: "Launch the coach to receive actionable improvements for this CV.",
-            coachLoading: "Thinking through the CV...",
-            coachError: "Could not fetch improvement tips.",
-            relatedTitle: "Comparison",
-            relatedEmpty: "No other analyses exist for this job yet.",
-          },
-    [lang],
-  );
-
-  const jobCopy = useMemo(
-    () =>
-      lang === "ar"
-        ? {
-            heading: "تفاصيل الوظيفة",
-            summaryFallback: "لا يوجد ملخص مختصر للوصف.",
-            level: "المستوى",
-            experience: "الخبرة المطلوبة",
-            contract: "نوع العقد",
-            location: "الموقع",
-            languages: "اللغات المطلوبة",
-            languagesLoading: "جارٍ تحليل اللغات...",
-            languagesFallback: "لم تُذكر لغات صريحة في الوصف.",
-            aiTitle: "ملخص سريع بالذكاء الاصطناعي",
-            aiButton: "ولّد النقاط",
-            aiRegenerate: "إعادة التوليد",
-            aiCopy: "نسخ",
-            aiLoading: "جارٍ التوليد...",
-            aiEmpty: "اضغط الزر لتوليد ثلاث نقاط مختصرة عن الدور.",
-            jobLoading: "جارٍ تحميل تفاصيل الوظيفة...",
-            jobError: "تعذّر تحميل تفاصيل الوظيفة.",
-            aiErrorPrefix: "تعذّر التوليد: ",
-            coachTitle: "مساعد التحسين",
-            coachButton: "حلّل السيرة",
-            coachRegenerate: "تحليل جديد",
-            coachCopy: "انسخ",
-            coachEmpty: "اضغط للحصول على تحسينات ذكية بناءً على هذه السيرة.",
-            coachLoading: "نحلّل السيرة...",
-            coachError: "تعذّر توليد التحسينات.",
-            relatedTitle: "مقارنة التحليلات",
-            relatedEmpty: "لم يتم تشغيل تحليلات أخرى لهذه الوظيفة بعد.",
-          }
-        : {
-            heading: "Job overview",
-            summaryFallback: "No short summary was extracted.",
-            level: "Level",
-            experience: "Required experience",
-            contract: "Contract",
-            location: "Location",
-            languages: "Languages",
-            languagesLoading: "Detecting languages...",
-            languagesFallback: "No explicit languages were mentioned in the brief.",
-            aiTitle: "AI quick highlights",
-            aiButton: "Generate",
-            aiRegenerate: "Regenerate",
-            aiCopy: "Copy",
-            aiLoading: "Generating...",
-            aiEmpty: "Tap the button to receive three laser-focused bullets.",
-            jobLoading: "Loading job details...",
-            jobError: "Failed to load job details.",
-            aiErrorPrefix: "Could not generate: ",
-            coachTitle: "AI coach",
-            coachButton: "Analyse CV",
-            coachRegenerate: "Regenerate",
-            coachCopy: "Copy",
-            coachEmpty: "Launch the coach to receive actionable improvements for this CV.",
-            coachLoading: "Thinking through the CV...",
-            coachError: "Could not fetch improvement tips.",
-            relatedTitle: "Comparison",
-            relatedEmpty: "No other analyses exist for this job yet.",
-          },
-    [lang],
-  );
+  /* ------------------------------- state ------------------------------- */
 
   const [data, setData] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [job, setJob] = useState<Job | null>(null);
   const [jobLoading, setJobLoading] = useState(false);
   const [jobError, setJobError] = useState<string | null>(null);
+
   const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
   const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
   const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
+
   const [aiLanguages, setAiLanguages] = useState<string[]>([]);
   const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
   const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
-  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
+
+  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(
+    null
+  );
   const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
-  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
-  const [quickSummary, setQuickSummary] = useState<string[]>([]);
-  const [quickError, setQuickError] = useState<string | null>(null);
-  const [quickLoading, setQuickLoading] = useState(false);
-
-  const fallbackLanguages = useMemo(() => {
-    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
-    if (!chunks.length) return [] as string[];
-    return detectLanguages(chunks.join("\n"));
-  }, [job?.description, jobFields?.notes]);
-
-  const displayLanguages = useMemo(() => {
-    const sourceMap = new Map<string, string>();
-    (jobFields?.languages ?? []).forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      if (!sourceMap.has(label)) sourceMap.set(label, "structured");
-    });
-    aiLanguages.forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      if (!sourceMap.has(label)) sourceMap.set(label, "assistant");
-    });
-    fallbackLanguages.forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      if (!sourceMap.has(label)) sourceMap.set(label, "detected");
-    });
-    return Array.from(sourceMap.entries()).map(([label, source]) => ({
-      label,
-      source,
-    }));
-  }, [aiLanguages, fallbackLanguages, jobFields?.languages]);
-
-  const languageSourceCopy = useMemo(
-    () => ({
-      structured: lang === "ar" ? "من الحقول" : "JD",
-      assistant: lang === "ar" ? "ذكاء" : "AI",
-      detected: lang === "ar" ? "مكتشف" : "Detected",
-    }),
-    [lang],
+  const [aiExperienceError, setAiExperienceError] = useState<string | null>(
+    null
   );
 
-  const [job, setJob] = useState<Job | null>(null);
-  const [jobLoading, setJobLoading] = useState(false);
-  const [jobError, setJobError] = useState<string | null>(null);
-  const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
-  const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
-  const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
-  const [aiLanguages, setAiLanguages] = useState<string[]>([]);
-  const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
-  const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
-  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
-  const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
-  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
   const [quickSummary, setQuickSummary] = useState<string[]>([]);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickLoading, setQuickLoading] = useState(false);
@@ -428,29 +283,29 @@ export default function ResultDetail() {
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [relatedError, setRelatedError] = useState<string | null>(null);
 
-  const [coach, setCoach] = useState<{ summary: string; suggestions: string[] } | null>(null);
+  const [coach, setCoach] = useState<{
+    summary: string;
+    suggestions: string[];
+  } | null>(null);
   const [coachError, setCoachError] = useState<string | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachCopied, setCoachCopied] = useState(false);
 
-  const relatedList = useMemo(() => {
-    if (!relatedAnalyses.length) return [];
-    return relatedAnalyses
-      .filter((item) => item.id && item.id !== (data?.id ?? ""))
-      .sort(
-        (a, b) => (Number(b.score ?? 0) || 0) - (Number(a.score ?? 0) || 0),
-      )
-      .slice(0, 4);
-  }, [data?.id, relatedAnalyses]);
+  /* ----------------------------- derived data ----------------------------- */
 
   const fallbackLanguages = useMemo(() => {
-    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
+    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(
+      Boolean
+    );
     if (!chunks.length) return [] as string[];
     return detectLanguages(chunks.join("\n"));
   }, [job?.description, jobFields?.notes]);
 
   const displayLanguages = useMemo(() => {
-    const sourceMap = new Map<string, { source: string }>();
+    const sourceMap = new Map<
+      string,
+      { source: "structured" | "assistant" | "detected" }
+    >();
     (jobFields?.languages ?? []).forEach((langItem) => {
       const label = (langItem || "").trim();
       if (!label) return;
@@ -478,82 +333,18 @@ export default function ResultDetail() {
       assistant: lang === "ar" ? "ذكاء" : "AI",
       detected: lang === "ar" ? "مكتشف" : "Detected",
     }),
-    [lang],
+    [lang]
   );
-
-  const [job, setJob] = useState<Job | null>(null);
-  const [jobLoading, setJobLoading] = useState(false);
-  const [jobError, setJobError] = useState<string | null>(null);
-  const [jobFields, setJobFields] = useState<ExtractedJobFields | null>(null);
-  const [jobFieldsLoading, setJobFieldsLoading] = useState(false);
-  const [jobFieldsError, setJobFieldsError] = useState<string | null>(null);
-  const [aiLanguages, setAiLanguages] = useState<string[]>([]);
-  const [aiLanguagesLoading, setAiLanguagesLoading] = useState(false);
-  const [aiLanguagesError, setAiLanguagesError] = useState<string | null>(null);
-  const [aiExperience, setAiExperience] = useState<ExperienceExtract | null>(null);
-  const [aiExperienceLoading, setAiExperienceLoading] = useState(false);
-  const [aiExperienceError, setAiExperienceError] = useState<string | null>(null);
-  const [quickSummary, setQuickSummary] = useState<string[]>([]);
-  const [quickError, setQuickError] = useState<string | null>(null);
-  const [quickLoading, setQuickLoading] = useState(false);
-  const [quickCopied, setQuickCopied] = useState(false);
-
-  const [relatedAnalyses, setRelatedAnalyses] = useState<Analysis[]>([]);
-  const [relatedLoading, setRelatedLoading] = useState(false);
-  const [relatedError, setRelatedError] = useState<string | null>(null);
-
-  const [coach, setCoach] = useState<{ summary: string; suggestions: string[] } | null>(null);
-  const [coachError, setCoachError] = useState<string | null>(null);
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachCopied, setCoachCopied] = useState(false);
 
   const relatedList = useMemo(() => {
     if (!relatedAnalyses.length) return [];
     return relatedAnalyses
       .filter((item) => item.id && item.id !== (data?.id ?? ""))
-      .sort(
-        (a, b) => (Number(b.score ?? 0) || 0) - (Number(a.score ?? 0) || 0),
-      )
+      .sort((a, b) => (Number(b.score ?? 0) || 0) - (Number(a.score ?? 0) || 0))
       .slice(0, 4);
   }, [data?.id, relatedAnalyses]);
 
-  const fallbackLanguages = useMemo(() => {
-    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
-    if (!chunks.length) return [] as string[];
-    return detectLanguages(chunks.join("\n"));
-  }, [job?.description, jobFields?.notes]);
-
-  const displayLanguages = useMemo(() => {
-    const sourceMap = new Map<string, { source: string }>();
-    (jobFields?.languages ?? []).forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      sourceMap.set(label, { source: "structured" });
-    });
-    aiLanguages.forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      if (!sourceMap.has(label)) sourceMap.set(label, { source: "assistant" });
-    });
-    fallbackLanguages.forEach((langItem) => {
-      const label = (langItem || "").trim();
-      if (!label) return;
-      if (!sourceMap.has(label)) sourceMap.set(label, { source: "detected" });
-    });
-    return Array.from(sourceMap.entries()).map(([label, payload]) => ({
-      label,
-      source: payload.source,
-    }));
-  }, [aiLanguages, fallbackLanguages, jobFields?.languages]);
-
-  const languageSourceCopy = useMemo(
-    () => ({
-      structured: lang === "ar" ? "من الحقول" : "JD",
-      assistant: lang === "ar" ? "ذكاء" : "AI",
-      detected: lang === "ar" ? "مكتشف" : "Detected",
-    }),
-    [lang],
-  );
+  /* -------------------------------- effects -------------------------------- */
 
   useEffect(() => {
     if (!params?.id) return;
@@ -641,9 +432,7 @@ export default function ResultDetail() {
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        setAiLanguagesError(
-          getErrorMessage(err, "failed to detect languages"),
-        );
+        setAiLanguagesError(getErrorMessage(err, "failed to detect languages"));
         setAiLanguages([]);
       })
       .finally(() => {
@@ -670,7 +459,7 @@ export default function ResultDetail() {
       .catch((err: unknown) => {
         if (!alive) return;
         setAiExperienceError(
-          getErrorMessage(err, "failed to extract experience"),
+          getErrorMessage(err, "failed to extract experience")
         );
         setAiExperience(null);
       })
@@ -680,7 +469,11 @@ export default function ResultDetail() {
     return () => {
       alive = false;
     };
-  }, [job?.description, jobFields?.required_experience_years, jobFieldsLoading]);
+  }, [
+    job?.description,
+    jobFields?.required_experience_years,
+    jobFieldsLoading,
+  ]);
 
   useEffect(() => {
     if (!data?.jobId) return;
@@ -696,7 +489,7 @@ export default function ResultDetail() {
       .catch((err: unknown) => {
         if (!alive) return;
         setRelatedError(
-          getErrorMessage(err, "failed to load related analyses"),
+          getErrorMessage(err, "failed to load related analyses")
         );
         setRelatedAnalyses([]);
       })
@@ -707,6 +500,8 @@ export default function ResultDetail() {
       alive = false;
     };
   }, [data?.jobId]);
+
+  /* ------------------------------- handlers ------------------------------- */
 
   const handleQuickSummary = useCallback(async () => {
     if (!job?.description?.trim()) return;
@@ -766,10 +561,13 @@ export default function ResultDetail() {
     }
   }, [coach]);
 
+  /* --------------------------------- render -------------------------------- */
+
   if (loading) {
     return (
       <div className="mx-auto flex max-w-4xl items-center justify-center py-16 text-sm text-[#2F3A4A]/70 dark:text-white/70">
-        <Loader2 className="me-2 h-4 w-4 animate-spin" /> {tt("analysisPage.loading")}
+        <Loader2 className="me-2 h-4 w-4 animate-spin" />{" "}
+        {tt("analysisPage.loading")}
       </div>
     );
   }
@@ -792,14 +590,12 @@ export default function ResultDetail() {
 
   const metrics: AnalysisMetrics | null = data.metrics ?? null;
   const gaps = data.gaps ?? null;
-  const missingMust =
-    metrics?.missingMust?.length
-      ? metrics.missingMust
-      : gaps?.mustHaveMissing ?? [];
-  const improvement =
-    metrics?.improvement?.length
-      ? metrics.improvement
-      : gaps?.improve ?? [];
+  const missingMust = metrics?.missingMust?.length
+    ? metrics.missingMust
+    : (gaps?.mustHaveMissing ?? []);
+  const improvement = metrics?.improvement?.length
+    ? metrics.improvement
+    : (gaps?.improve ?? []);
   const strengths = metrics?.topStrengths ?? [];
   const risks = metrics?.riskFlags ?? [];
   const evidence = data.evidence?.slice(0, 4) ?? [];
@@ -814,19 +610,16 @@ export default function ResultDetail() {
   const experienceDetail =
     jobFields?.notes?.trim() || aiExperience?.experience_detail?.trim() || "";
   const languagesLoading =
-    jobFieldsLoading ||
-    (!jobFields?.languages?.length && aiLanguagesLoading);
-  const languagesError =
-    jobFields?.languages?.length
-      ? null
-      : jobFieldsError || aiLanguagesError;
+    jobFieldsLoading || (!jobFields?.languages?.length && aiLanguagesLoading);
+  const languagesError = jobFields?.languages?.length
+    ? null
+    : jobFieldsError || aiLanguagesError;
   const experienceLoading =
     jobFieldsLoading ||
     (!jobFields?.required_experience_years?.trim() && aiExperienceLoading);
-  const experienceStatusError =
-    jobFields?.required_experience_years?.trim()
-      ? null
-      : jobFieldsError || aiExperienceError;
+  const experienceStatusError = jobFields?.required_experience_years?.trim()
+    ? null
+    : jobFieldsError || aiExperienceError;
   const experienceLoadingLabel =
     lang === "ar" ? "جارٍ استخراج الخبرة..." : "Extracting experience...";
 
@@ -887,13 +680,16 @@ export default function ResultDetail() {
             </div>
             <div className="flex flex-col gap-2 text-xs text-[#2F3A4A]/60 dark:text-white/60">
               <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] shadow-sm dark:bg-white/10 dark:text-white/80">
-                <Target className="h-3.5 w-3.5" /> {jobCopy.level}: {jobFields?.level || "—"}
+                <Target className="h-3.5 w-3.5" /> {jobCopy.level}:{" "}
+                {jobFields?.level || "—"}
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] shadow-sm dark:bg-white/10 dark:text-white/80">
-                <Activity className="h-3.5 w-3.5" /> {jobCopy.contract}: {(jobFields?.contract_types || []).join("، ") || "—"}
+                <Activity className="h-3.5 w-3.5" /> {jobCopy.contract}:{" "}
+                {(jobFields?.contract_types || []).join("، ") || "—"}
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] shadow-sm dark:bg-white/10 dark:text-white/80">
-                <ArrowUpRight className="h-3.5 w-3.5" /> {jobCopy.location}: {jobFields?.location?.trim() || "—"}
+                <ArrowUpRight className="h-3.5 w-3.5" /> {jobCopy.location}:{" "}
+                {jobFields?.location?.trim() || "—"}
               </span>
             </div>
           </div>
@@ -908,7 +704,9 @@ export default function ResultDetail() {
                   <AnimatedLoader label={experienceLoadingLabel} />
                 </div>
               ) : experienceStatusError ? (
-                <div className="mt-2 text-xs text-red-600">{experienceStatusError}</div>
+                <div className="mt-2 text-xs text-red-600">
+                  {experienceStatusError}
+                </div>
               ) : (
                 <div className="mt-1 space-y-1 text-[#D85E00] dark:text-white">
                   <div className="text-base font-semibold">
@@ -932,7 +730,9 @@ export default function ResultDetail() {
                   <AnimatedLoader label={jobCopy.languagesLoading} />
                 </div>
               ) : languagesError ? (
-                <div className="mt-2 text-xs text-red-600">{languagesError}</div>
+                <div className="mt-2 text-xs text-red-600">
+                  {languagesError}
+                </div>
               ) : displayLanguages.length ? (
                 <div className="mt-2 flex flex-wrap gap-2 text-xs">
                   {displayLanguages.map(({ label, source }) => (
@@ -942,7 +742,9 @@ export default function ResultDetail() {
                     >
                       {label}
                       <span className="text-[10px] font-normal uppercase tracking-wide text-[#B54708]">
-                        {languageSourceCopy[source as keyof typeof languageSourceCopy] ?? "AI"}
+                        {languageSourceCopy[
+                          source as keyof typeof languageSourceCopy
+                        ] ?? "AI"}
                       </span>
                     </span>
                   ))}
@@ -1011,14 +813,22 @@ export default function ResultDetail() {
                   className="inline-flex items-center gap-2 rounded-full border-[#FFB26B]/60 bg-[#FFF2E8] px-4 py-2 text-xs font-semibold text-[#D85E00] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#FFD4A8] disabled:opacity-60"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  {quickLoading ? jobCopy.aiLoading : quickSummary.length ? jobCopy.aiRegenerate : jobCopy.aiButton}
+                  {quickLoading
+                    ? jobCopy.aiLoading
+                    : quickSummary.length
+                      ? jobCopy.aiRegenerate
+                      : jobCopy.aiButton}
                 </Button>
                 <Button
                   onClick={handleQuickCopy}
                   disabled={!quickSummary.length}
                   className="inline-flex items-center gap-2 rounded-full border border-transparent bg-[#FF7A00] px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#FF8E26] disabled:opacity-60"
                 >
-                  {quickCopied ? <Check className="h-3.5 w-3.5" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+                  {quickCopied ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <ClipboardCopy className="h-3.5 w-3.5" />
+                  )}
                   {jobCopy.aiCopy}
                 </Button>
               </div>
@@ -1050,7 +860,9 @@ export default function ResultDetail() {
                   </AnimatePresence>
                 </div>
               ) : (
-                <div className="text-[#2F3A4A]/60 dark:text-white/60">{jobCopy.aiEmpty}</div>
+                <div className="text-[#2F3A4A]/60 dark:text-white/60">
+                  {jobCopy.aiEmpty}
+                </div>
               )}
             </div>
           </div>
@@ -1072,15 +884,21 @@ export default function ResultDetail() {
           <div className="grid w-full gap-2 text-xs text-white/80">
             <span className="inline-flex items-center justify-between gap-2 rounded-full bg-white/10 px-3 py-1">
               <span>{tt("chat.mustPercent")}</span>
-              <span className="font-semibold">{toPercent(metrics?.mustPercent)}</span>
+              <span className="font-semibold">
+                {toPercent(metrics?.mustPercent)}
+              </span>
             </span>
             <span className="inline-flex items-center justify-between gap-2 rounded-full bg-white/10 px-3 py-1">
               <span>{tt("chat.nicePercent")}</span>
-              <span className="font-semibold">{toPercent(metrics?.nicePercent)}</span>
+              <span className="font-semibold">
+                {toPercent(metrics?.nicePercent)}
+              </span>
             </span>
             <span className="inline-flex items-center justify-between gap-2 rounded-full bg-white/10 px-3 py-1">
               <span>{tt("chat.totalRequirements")}</span>
-              <span className="font-semibold">{metrics?.totalRequirements ?? data.breakdown.length}</span>
+              <span className="font-semibold">
+                {metrics?.totalRequirements ?? data.breakdown.length}
+              </span>
             </span>
           </div>
         </div>
@@ -1093,11 +911,13 @@ export default function ResultDetail() {
             <div className="mt-3 grid gap-3 text-xs text-[#2F3A4A]/70 dark:text-white/70 sm:grid-cols-2">
               {data.model ? (
                 <span className="inline-flex items-center gap-2 rounded-2xl bg-[#FFF2E8] px-3 py-2 font-semibold text-[#B54708] dark:bg-white/10 dark:text-[#FFB26B]">
-                  <Sparkles className="h-3.5 w-3.5" /> {tt("analysisPage.model")}: {data.model}
+                  <Sparkles className="h-3.5 w-3.5" />{" "}
+                  {tt("analysisPage.model")}: {data.model}
                 </span>
               ) : null}
               <span className="inline-flex items-center gap-2 rounded-2xl bg-[#FFF2E8] px-3 py-2 font-semibold text-[#B54708] dark:bg-white/10 dark:text-[#FFB26B]">
-                <Trophy className="h-3.5 w-3.5" /> {tt("analysisPage.status")}: {data.status}
+                <Trophy className="h-3.5 w-3.5" /> {tt("analysisPage.status")}:{" "}
+                {data.status}
               </span>
             </div>
           </div>
@@ -1133,10 +953,12 @@ export default function ResultDetail() {
                       </div>
                       <div className="flex flex-col items-end gap-1 text-xs">
                         <span className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
-                          {tt("analysisPage.similarity")}: {(item.similarity * 100).toFixed(0)}%
+                          {tt("analysisPage.similarity")}:{" "}
+                          {(item.similarity * 100).toFixed(0)}%
                         </span>
                         <span className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
-                          {tt("analysisPage.scoreLabel")} {item.score10.toFixed(1)} / 10
+                          {tt("analysisPage.scoreLabel")}{" "}
+                          {item.score10.toFixed(1)} / 10
                         </span>
                       </div>
                     </div>
@@ -1150,16 +972,23 @@ export default function ResultDetail() {
             </div>
           </div>
 
-          {(strengths.length || improvement.length || missingMust.length || risks.length) ? (
+          {strengths.length ||
+          improvement.length ||
+          missingMust.length ||
+          risks.length ? (
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="rounded-3xl border border-[#FFD7B3]/70 bg-white/85 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A] dark:text-white">
-                  <Trophy className="h-4 w-4 text-[#FF7A00]" /> {tt("analysisPage.strengths")}
+                  <Trophy className="h-4 w-4 text-[#FF7A00]" />{" "}
+                  {tt("analysisPage.strengths")}
                 </div>
                 <ul className="mt-3 space-y-2 text-xs text-[#2F3A4A]/70 dark:text-white/70">
                   {strengths.length ? (
                     strengths.map((item, idx) => (
-                      <li key={`${item.requirement}-${idx}`} className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
+                      <li
+                        key={`${item.requirement}-${idx}`}
+                        className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
+                      >
                         {item.requirement}
                       </li>
                     ))
@@ -1173,7 +1002,8 @@ export default function ResultDetail() {
 
               <div className="rounded-3xl border border-[#FFD7B3]/70 bg-white/85 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A] dark:text-white">
-                  <Target className="h-4 w-4 text-[#FF7A00]" /> {tt("analysisPage.gaps")}
+                  <Target className="h-4 w-4 text-[#FF7A00]" />{" "}
+                  {tt("analysisPage.gaps")}
                 </div>
                 <div className="mt-3 space-y-3 text-xs text-[#2F3A4A]/70 dark:text-white/70">
                   <div className="space-y-2">
@@ -1183,7 +1013,10 @@ export default function ResultDetail() {
                     {missingMust.length ? (
                       <ul className="space-y-2">
                         {missingMust.map((item, idx) => (
-                          <li key={`${item}-${idx}`} className="rounded-2xl bg-[#FFE9D2] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
+                          <li
+                            key={`${item}-${idx}`}
+                            className="rounded-2xl bg-[#FFE9D2] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
+                          >
                             {item}
                           </li>
                         ))}
@@ -1202,7 +1035,10 @@ export default function ResultDetail() {
                     {improvement.length ? (
                       <ul className="space-y-2">
                         {improvement.map((item, idx) => (
-                          <li key={`${item}-${idx}`} className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
+                          <li
+                            key={`${item}-${idx}`}
+                            className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
+                          >
                             {item}
                           </li>
                         ))}
@@ -1218,12 +1054,16 @@ export default function ResultDetail() {
 
               <div className="rounded-3xl border border-[#FFD7B3]/70 bg-white/85 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A] dark:text-white">
-                  <AlertTriangle className="h-4 w-4 text-[#FF7A00]" /> {tt("analysisPage.risks")}
+                  <AlertTriangle className="h-4 w-4 text-[#FF7A00]" />{" "}
+                  {tt("analysisPage.risks")}
                 </div>
                 <ul className="mt-3 space-y-2 text-xs text-[#2F3A4A]/70 dark:text-white/70">
                   {risks.length ? (
                     risks.map((item) => (
-                      <li key={item} className="rounded-2xl bg-[#FFE3D1] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
+                      <li
+                        key={item}
+                        className="rounded-2xl bg-[#FFE3D1] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
+                      >
                         {riskCopy[item]?.[lang] || item}
                       </li>
                     ))
@@ -1240,11 +1080,15 @@ export default function ResultDetail() {
           {evidence.length ? (
             <div className="rounded-3xl border border-[#FFD7B3]/70 bg-white/85 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A] dark:text-white">
-                <Sparkles className="h-4 w-4 text-[#FF7A00]" /> {tt("analysisPage.evidence")}
+                <Sparkles className="h-4 w-4 text-[#FF7A00]" />{" "}
+                {tt("analysisPage.evidence")}
               </div>
               <ul className="mt-3 space-y-2 text-xs text-[#2F3A4A]/70 dark:text-white/70">
                 {evidence.map((item, idx) => (
-                  <li key={`${item.chunk.id}-${idx}`} className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
+                  <li
+                    key={`${item.chunk.id}-${idx}`}
+                    className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
+                  >
                     <div className="font-semibold">{item.requirement}</div>
                     <div className="text-[11px] text-[#B54708]/80 dark:text-[#FFB26B]/80">
                       “{clampText(item.chunk.excerpt, 220)}”
@@ -1256,7 +1100,6 @@ export default function ResultDetail() {
           ) : null}
         </div>
       </motion.section>
-
       <motion.section
         className="grid gap-6 rounded-3xl border border-[#FFD7B3]/70 bg-gradient-to-br from-white via-white/95 to-[#FFF5EC] p-6 shadow-[0_30px_100px_-45px_rgba(255,122,0,0.55)] dark:from-[#271c18] dark:via-[#271c18]/95 dark:to-[#1b1411] dark:border-white/10 lg:grid-cols-2"
         {...motionCardProps}
@@ -1289,7 +1132,9 @@ export default function ResultDetail() {
                     </div>
                   </div>
                   <div className="text-right text-xs">
-                    <div className="font-semibold">{(item.score ?? 0).toFixed(1)} / 10</div>
+                    <div className="font-semibold">
+                      {(item.score ?? 0).toFixed(1)} / 10
+                    </div>
                     <div>{toPercent(item.metrics?.mustPercent)}</div>
                   </div>
                 </div>
@@ -1325,7 +1170,11 @@ export default function ResultDetail() {
                 disabled={!coach || !coach.summary}
                 className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-[#FFF2E8] px-4 py-2 text-xs font-semibold text-[#D85E00] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#FFD4A8] disabled:opacity-60"
               >
-                {coachCopied ? <Check className="h-3.5 w-3.5" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+                {coachCopied ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <ClipboardCopy className="h-3.5 w-3.5" />
+                )}
                 {jobCopy.coachCopy}
               </Button>
             </div>
