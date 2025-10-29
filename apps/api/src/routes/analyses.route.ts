@@ -1,7 +1,6 @@
 // apps/api/src/routes/analyses.route.ts
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
-import { Prisma } from "@prisma/client";
 import {
   runAnalysis,
   compareCvEmbeddings,

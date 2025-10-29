@@ -43,23 +43,26 @@ export async function jobsRoute(app: FastifyInstance) {
       });
 
       if (Array.isArray(requirements) && requirements.length) {
-        const payload = requirements
-          .map((r: any): Prisma.JobRequirementCreateManyInput | null => {
-            const requirement =
-              typeof r === "string" ? r : String(r?.requirement ?? "");
-            if (!requirement.trim()) return null;
-            return {
-              jobId: job.id,
-              requirement: requirement.slice(0, 240),
-              mustHave: Boolean(r?.mustHave ?? true),
-              weight: new Prisma.Decimal(Number(r?.weight ?? 1) || 1),
-            } satisfies Prisma.JobRequirementCreateManyInput;
-          })
-          .filter(Boolean) as Prisma.JobRequirementCreateManyInput[];
-
-        if (payload.length) {
-          await prisma.jobRequirement.createMany({ data: payload });
-        }
+        await prisma.jobRequirement.createMany({
+          data: requirements
+            .map((r: any) => {
+              const requirement =
+                typeof r === "string" ? r : String(r?.requirement ?? "");
+              if (!requirement.trim()) return null;
+              return {
+                jobId: job.id,
+                requirement: requirement.slice(0, 240),
+                mustHave: Boolean(r?.mustHave ?? true),
+                weight: Number(r?.weight ?? 1) || 1, // Decimal-compatible
+              };
+            })
+            .filter(Boolean) as {
+            jobId: string;
+            requirement: string;
+            mustHave: boolean;
+            weight: number;
+          }[],
+        });
       }
 
       const out = await prisma.job.findUnique({
@@ -141,7 +144,7 @@ export async function jobsRoute(app: FastifyInstance) {
       if (!job) return reply.code(404).send({ error: "Job not found" });
 
       const payload = (Array.isArray(items) ? items : [])
-        .map((item): Prisma.JobRequirementCreateManyInput | null => {
+        .map((item) => {
           if (!item) return null;
           const requirement =
             typeof item === "string"
@@ -152,10 +155,15 @@ export async function jobsRoute(app: FastifyInstance) {
             jobId: id,
             requirement: requirement.slice(0, 240),
             mustHave: Boolean(item?.mustHave ?? true),
-            weight: new Prisma.Decimal(Number(item?.weight ?? 1) || 1),
-          } satisfies Prisma.JobRequirementCreateManyInput;
+            weight: Number(item?.weight ?? 1) || 1,
+          };
         })
-        .filter(Boolean) as Prisma.JobRequirementCreateManyInput[];
+        .filter(Boolean) as {
+        jobId: string;
+        requirement: string;
+        mustHave: boolean;
+        weight: number;
+      }[];
 
       if (!payload.length)
         return reply.code(400).send({ error: "No requirements provided" });
@@ -200,7 +208,7 @@ export async function jobsRoute(app: FastifyInstance) {
           return reply
             .code(400)
             .send({ error: "weight must be positive number" });
-        data.weight = new Prisma.Decimal(weight);
+        data.weight = weight;
       }
 
       const updated = await prisma.jobRequirement.update({
@@ -239,4 +247,3 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 }
-  
