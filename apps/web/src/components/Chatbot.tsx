@@ -52,25 +52,28 @@ const MAX_MESSAGES = 60;
 const MAX_SELECTED = 4;
 const createMsgId = () => Math.random().toString(36).slice(2);
 
-const riskCopy: Record<string, { ar: string; en: string }> = {
+// Make riskCopy strongly typed
+const riskCopy = {
   must_threshold: {
-    ar: "لم تتجاوز متطلبات الـmust العتبة المطلوبة.",
-    en: "Must-have requirements remain below the acceptance threshold.",
+  ar: "لم تتجاوز متطلبات الـmust العتبة المطلوبة.",
+  en: "Must-have requirements remain below the acceptance threshold.",
   },
   low_total: {
-    ar: "النتيجة الكلية منخفضة — راجع المتطلبات الحساسة.",
-    en: "Overall score is low — review the critical requirements.",
+  ar: "النتيجة الكلية منخفضة — راجع المتطلبات الحساسة.",
+  en: "Overall score is low — review the critical requirements.",
   },
   no_requirements: {
-    ar: "لا توجد متطلبات كافية لتقييمها.",
-    en: "No requirements were provided for this analysis.",
+  ar: "لا توجد متطلبات كافية لتقييمها.",
+  en: "No requirements were provided for this analysis.",
   },
   no_text: {
-    ar: "لم يتم استخراج نص من السيرة الذاتية.",
-    en: "No text could be extracted from the CV.",
+  ar: "لم يتم استخراج نص من السيرة الذاتية.",
+  en: "No text could be extracted from the CV.",
   },
-};
-
+  } as const;
+  
+  
+  type RiskFlag = keyof typeof riskCopy;
 const toPercent = (value: number | null | undefined) => {
   const safe = Number.isFinite(value ?? NaN) ? Number(value) : 0;
   return `${Math.max(0, Math.min(100, safe)).toFixed(1)}%`;
@@ -116,12 +119,16 @@ type CompletedEventDetail = {
   analysis: Analysis;
   job?: { id?: string | null } | null;
 };
+type Lang = "ar" | "en";
+
+type ToastTone = "success" | "error" | "info";
+type ToastMessage = { id: string; text: string; tone: ToastTone };
 
 export default function Chatbot() {
   // Modal state
   const [open, setOpen] = useState(false);
 
-  const lang = useLang();
+  const lang = useLang() as Lang;
   // Translation shortcut that re-computes when `lang` changes
   const tt = useMemo(() => (p: string) => t(lang, p), [lang]);
 
@@ -1416,7 +1423,7 @@ function ChatBubble({ role, text, tone = "normal" }: ChatBubbleProps) {
   );
 }
 
-type TypingIndicatorProps = { lang: string };
+type TypingIndicatorProps = { lang: Lang };
 
 function TypingIndicator({ lang }: TypingIndicatorProps) {
   const label = lang === "ar" ? "المساعد يكتب..." : "Assistant is typing...";

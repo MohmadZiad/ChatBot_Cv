@@ -5,12 +5,10 @@ import { Prisma } from "@prisma/client";
 import { chunkText } from "../ingestion/chunk.js";
 
 const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
-
 const DIM = Number(process.env.EMBEDDING_DIM || "1536");
 
 /**
- * يولّد embeddings لأي CVChunk ما إلها embedding بعد (hasEmbedding=false)
- * وبعدين يرفع الفلاغ hasEmbedding=true مرّة واحدة بشكل جماعي.
+ * يبني CVChunk لأول مرة إن لم تكن موجودة.
  */
 export async function ensureCvChunks(cvId: string) {
   const existing = await prisma.cVChunk.count({ where: { cvId } });
@@ -38,43 +36,42 @@ export async function ensureCvChunks(cvId: string) {
   return chunkData.length;
 }
 
+/**
+ * يولّد embeddings لكل CVChunk ما عليه embedding بعد.
+ */
 export async function ensureCvEmbeddings(cvId: string) {
-  // صحّح أي سجلات قديمة تحتوي على embedding فارغ لكنها معلّمة كـ hasEmbedding=true
+  // صحّح أي صفوف قديمة معلّمة hasEmbedding=true بلا embedding فعلي
   await prisma.$executeRaw`
     UPDATE "CVChunk"
     SET "hasEmbedding" = false
     WHERE "cvId" = ${cvId} AND "embedding" IS NULL
   `;
 
-  // هات الشُنكس اللي لسه ما إلها embedding
   const chunks = await prisma.cVChunk.findMany({
-    where: {
-      cvId,
-      hasEmbedding: false,
-    },
+    where: { cvId, hasEmbedding: false },
     orderBy: { id: "asc" },
     select: { id: true, content: true },
   });
-
   if (chunks.length === 0) return 0;
 
-  const batch = 64;
+  const BATCH = 64;
   let updated = 0;
   const idsUpdated: (number | bigint)[] = [];
 
-  for (let i = 0; i < chunks.length; i += batch) {
-    const slice = chunks.slice(i, i + batch);
+  for (let i = 0; i < chunks.length; i += BATCH) {
+    const slice = chunks.slice(i, i + BATCH);
 
-    // استدعاء OpenAI للحصول على المتجهات
+    // استدعاء مزوّد الـ embeddings
     const vecs = await embedTexts(slice.map((c) => c.content));
 
-    // خزّن كل متجه عبر SQL (Prisma ما بدعم Unsupported("vector") مباشرة)
+    // تخزين كل متجه (pgvector) + وسم hasEmbedding
     for (let k = 0; k < slice.length; k++) {
       const id = slice[k].id as unknown as number | bigint;
       const v = vecs[k];
 
       if (!Array.isArray(v) || (DIM && v.length !== DIM)) continue;
 
+      // embedding = ARRAY[...]::vector
       await prisma.$executeRawUnsafe(
         `UPDATE "CVChunk" SET "embedding" = ${toVectorSQL(v)} WHERE id = $1`,
         id
@@ -85,7 +82,6 @@ export async function ensureCvEmbeddings(cvId: string) {
     }
   }
 
-  // علّم الشُنكس اللي تحديثت مرّة واحدة
   if (idsUpdated.length) {
     await prisma.$executeRaw`
       UPDATE "CVChunk"
@@ -99,7 +95,6 @@ export async function ensureCvEmbeddings(cvId: string) {
 
 // Helpers
 function toVectorSQL(vec: number[]) {
-  // cast إلى pgvector
   return `${toArraySql(vec)}::vector`;
 }
 function toArraySql(vec: number[]) {

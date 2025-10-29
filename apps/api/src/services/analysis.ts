@@ -26,12 +26,11 @@ function normalizeForKeywords(value: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
-
 function tokenizeRequirement(value: string): string[] {
   const base = normalizeForKeywords(value)
     .split(" ")
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3 || /[+#.]/.test(token));
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3 || /[+#.]/.test(t));
   const unique = new Set<string>();
   for (const token of base) {
     if (!token) continue;
@@ -41,7 +40,6 @@ function tokenizeRequirement(value: string): string[] {
   }
   return Array.from(unique.values());
 }
-
 function keywordRatio(tokens: string[], text: string): number {
   if (!tokens.length) return 0;
   const normalized = normalizeForKeywords(text);
@@ -50,14 +48,10 @@ function keywordRatio(tokens: string[], text: string): number {
   let hits = 0;
   for (const token of tokens) {
     if (!token) continue;
-    if (normalized.includes(token) || compact.includes(token)) {
-      hits++;
-      continue;
-    }
+    if (normalized.includes(token) || compact.includes(token)) hits++;
   }
   return hits / tokens.length;
 }
-
 function gapsFrom(perReq: any[]) {
   const missing = perReq
     .filter((r: any) => r.mustHave && r.similarity < 0.35)
@@ -68,17 +62,14 @@ function gapsFrom(perReq: any[]) {
   return { mustHaveMissing: missing, improve };
 }
 
-// نماذج الذكاء المستخدمة في الحسابات والتحليلات
 const EMB_MODEL = process.env.EMBEDDINGS_MODEL || "text-embedding-3-small";
 const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
 
 export async function runAnalysis(jobId: string, cvId: string) {
-  // تأكد من وجود chunks أساسًا (قد تكون سير قديمة بلا أجزاء)
   await ensureCvChunks(cvId);
-  // تأكيد وجود embeddings للـ CV (وتوليدها إذا ناقصة)
   await ensureCvEmbeddings(cvId);
 
-  // قراءة الـ chunks مع تحويل vector -> real[]
+  // اقرأ الـ chunks ذات embedding
   let chunks = await prisma.$queryRaw<
     { id: bigint; section: string; content: string; embedding: number[] }[]
   >`
@@ -87,8 +78,9 @@ export async function runAnalysis(jobId: string, cvId: string) {
     WHERE "cvId" = ${cvId} AND embedding IS NOT NULL
     ORDER BY id ASC
   `;
+
+  // محاولة أخيرة قبل الفشل
   if (!chunks.length) {
-    // محاولة أخيرة: أعد بناء الأجزاء والمتجهات ثم أعد القراءة
     await ensureCvChunks(cvId);
     await ensureCvEmbeddings(cvId);
     const retry = await prisma.$queryRaw<
@@ -112,12 +104,10 @@ export async function runAnalysis(jobId: string, cvId: string) {
   if (!reqs.length)
     throw httpError("الوظيفة بلا متطلبات.", 422, "NO_JOB_REQUIREMENTS");
 
-  // Embeddings للمتطلبات
+  // embeddings للمتطلبات
   let reqVecs: number[][];
   try {
-    reqVecs = await embedTexts(
-      reqs.map((r: (typeof reqs)[number]) => r.requirement)
-    );
+    reqVecs = await embedTexts(reqs.map((r) => r.requirement));
   } catch (e: any) {
     const err: HttpError = new Error(
       `OpenAI embeddings failed: ${e?.message || e}`
@@ -143,6 +133,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       if (sim > best.score) best = { score: sim, idx: j };
     }
 
+    // تعزيز بالكلمات المفتاحية
     const keywordTokens = tokenizeRequirement(r.requirement);
     if (keywordTokens.length) {
       let boostedScore = best.score;
@@ -157,9 +148,8 @@ export async function runAnalysis(jobId: string, cvId: string) {
           }
         }
       }
-      if (boostedScore > best.score) {
+      if (boostedScore > best.score)
         best = { score: boostedScore, idx: boostedIdx };
-      }
     }
 
     const base10 = Math.round(best.score * 10);
@@ -261,12 +251,10 @@ export async function runAnalysis(jobId: string, cvId: string) {
       cvId,
       status: "done",
       score: score10,
-      // Prisma 6: استخدم JsonValue
       breakdown: perReq as any,
       evidence: evidence as any,
       gaps: gapDetails as any,
       metrics: metrics as any,
-
       model: `${ANALYSIS_MODEL} | ${EMB_MODEL}`,
     },
   });
@@ -304,18 +292,13 @@ function meanVector(list: number[][]): number[] {
   if (!list.length) return [];
   const size = list[0]?.length ?? 0;
   const acc = new Array(size).fill(0);
-  for (const vec of list) {
-    for (let i = 0; i < size && i < vec.length; i++) {
-      acc[i] += vec[i];
-    }
-  }
+  for (const vec of list)
+    for (let i = 0; i < size && i < vec.length; i++) acc[i] += vec[i];
   const denom = list.length || 1;
-  return acc.map((value) => value / denom);
+  return acc.map((v) => v / denom);
 }
-
 function serializeMetrics(metrics: any | null | undefined) {
-  if (!metrics) return null;
-  if (typeof metrics !== "object") return null;
+  if (!metrics || typeof metrics !== "object") return null;
   return metrics as any;
 }
 
@@ -326,15 +309,11 @@ export async function compareCvEmbeddings(cvIds: string[]) {
 
   await Promise.all(uniqueIds.map((id) => ensureCvEmbeddings(id)));
 
-  const rows = await prisma.$queryRaw<
-    { cvId: string; embedding: number[] }[]
-  >(
+  const rows = await prisma.$queryRaw<{ cvId: string; embedding: number[] }[]>(
     Prisma.sql`
       SELECT "cvId", (embedding::real[]) AS embedding
       FROM "CVChunk"
-      WHERE "cvId" IN (${Prisma.join(
-        uniqueIds.map((id) => Prisma.sql`${id}`)
-      )})
+      WHERE "cvId" IN (${Prisma.join(uniqueIds.map((id) => Prisma.sql`${id}`))})
         AND embedding IS NOT NULL
     `
   );
@@ -367,30 +346,21 @@ export async function compareCvEmbeddings(cvIds: string[]) {
 
   const meta = await prisma.cV.findMany({
     where: { id: { in: uniqueIds } },
-    select: {
-      id: true,
-      originalFilename: true,
-      createdAt: true,
-      lang: true,
-    },
+    select: { id: true, originalFilename: true, createdAt: true, lang: true },
   });
 
   pairs.sort((a, b) => b.similarity - a.similarity);
 
-  const highlights = pairs.map((pair) => {
+  const insights = pairs.map((pair) => {
     const a = meta.find((m) => m.id === pair.a);
     const b = meta.find((m) => m.id === pair.b);
     const nameA = a?.originalFilename || pair.a.slice(0, 8);
     const nameB = b?.originalFilename || pair.b.slice(0, 8);
-    let label: string;
-    if (pair.similarity >= 85) {
-      label = `تشابه مرتفع جدًا (${pair.similarity}%) بين ${nameA} و${nameB}.`;
-    } else if (pair.similarity >= 65) {
-      label = `تشابه قوي (${pair.similarity}%) بين ${nameA} و${nameB}.`;
-    } else {
-      label = `تشابه محدود (${pair.similarity}%) بين ${nameA} و${nameB}.`;
-    }
-    return label;
+    if (pair.similarity >= 85)
+      return `تشابه مرتفع جدًا (${pair.similarity}%) بين ${nameA} و${nameB}.`;
+    if (pair.similarity >= 65)
+      return `تشابه قوي (${pair.similarity}%) بين ${nameA} و${nameB}.`;
+    return `تشابه محدود (${pair.similarity}%) بين ${nameA} و${nameB}.`;
   });
 
   return {
@@ -401,7 +371,7 @@ export async function compareCvEmbeddings(cvIds: string[]) {
       createdAt: m.createdAt?.toISOString?.() ?? null,
       lang: m.lang,
     })),
-    insights: highlights,
+    insights,
   };
 }
 
@@ -427,15 +397,12 @@ export async function recommendTopCandidates(
     where: { jobId, cvId: { in: uniqueIds } },
   });
   const missing = uniqueIds.filter(
-    (id) => !existing.some((analysis) => analysis.cvId === id)
+    (id) => !existing.some((a) => a.cvId === id)
   );
-
   for (const id of missing) {
     try {
       await runAnalysis(jobId, id);
-    } catch (err) {
-      // لو فشل تحليل CV معين نستمر مع البقية
-    }
+    } catch {}
   }
 
   const analyses = await prisma.analysis.findMany({
@@ -444,16 +411,16 @@ export async function recommendTopCandidates(
     orderBy: { score: "desc" },
   });
 
-  const ranking = analyses.map((analysis) => {
-    const metrics = serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
-    const weighted = metrics?.weightedScore ?? analysis.score ?? 0;
+  const ranking = analyses.map((a) => {
+    const metrics = serializeMetrics(a.metrics) || serializeMetrics(a.gaps);
+    const weighted = metrics?.weightedScore ?? a.score ?? 0;
     const mustPercent = metrics?.mustPercent ?? 0;
     const nicePercent = metrics?.nicePercent ?? 0;
     const missingMust: string[] = metrics?.missingMust || [];
     const improvement: string[] = metrics?.improvement || [];
     return {
-      cvId: analysis.cvId,
-      fileName: analysis.cv?.originalFilename || analysis.cvId,
+      cvId: a.cvId,
+      fileName: a.cv?.originalFilename || a.cvId,
       score: Number(weighted),
       mustPercent: Number(mustPercent),
       nicePercent: Number(nicePercent),
@@ -476,21 +443,15 @@ export async function recommendTopCandidates(
           `${prefix} — درجة ${Number(item.score).toFixed(1)} / 10`,
           `تغطية المتطلبات الحرجة ${Number(item.mustPercent).toFixed(1)}%`,
         ];
-        if (item.missingMust.length) {
+        if (item.missingMust.length)
           parts.push(`يفتقد إلى: ${item.missingMust.slice(0, 3).join("، ")}`);
-        }
         return parts.join(" • ");
       })
     : [
         "لم نعثر على تحليلات صالحة للمرشحين المختارين. تأكد من تشغيل التحليل لكل سيرة واكتمال المتطلبات أولًا.",
       ];
 
-  return {
-    job: { id: job.id, title: job.title },
-    ranking,
-    top: best,
-    summary,
-  };
+  return { job: { id: job.id, title: job.title }, ranking, top: best, summary };
 }
 
 export async function improvementSuggestions(
@@ -510,7 +471,6 @@ export async function improvementSuggestions(
     }),
     prisma.cV.findUnique({ where: { id: cvId } }),
   ]);
-
   if (!job) throw httpError("الوظيفة غير موجودة", 404, "JOB_NOT_FOUND");
   if (!cv) throw httpError("السيرة الذاتية غير موجودة", 404, "CV_NOT_FOUND");
 
@@ -546,7 +506,6 @@ export async function improvementSuggestions(
       throw err;
     }
   }
-
   if (!analysis) {
     return {
       ok: false,
@@ -569,7 +528,6 @@ export async function improvementSuggestions(
 
   const metrics =
     serializeMetrics(analysis.metrics) || serializeMetrics(analysis.gaps);
-
   const missingMust: string[] = metrics?.missingMust || [];
   const improvement: string[] = metrics?.improvement || [];
   const mustPercent = Number(metrics?.mustPercent ?? 0);
@@ -579,16 +537,16 @@ export async function improvementSuggestions(
   const suggestions: string[] = [];
   if (missingMust.length) {
     suggestions.push(
-      (lang === "ar"
+      lang === "ar"
         ? `أضف خبرات واضحة حول المتطلبات الأساسية التالية: ${missingMust.join("، ")}.`
-        : `Add explicit experience covering these must-have items: ${missingMust.join(", ")}.`)
+        : `Add explicit experience covering these must-have items: ${missingMust.join(", ")}.`
     );
   }
   if (improvement.length) {
     suggestions.push(
-      (lang === "ar"
+      lang === "ar"
         ? `عزّز السيرة الذاتية بإنجازات أو أرقام حول: ${improvement.join("، ")}.`
-        : `Strengthen the CV with concrete achievements for: ${improvement.join(", ")}.`)
+        : `Strengthen the CV with concrete achievements for: ${improvement.join(", ")}.`
     );
   }
   if (nicePercent < 60) {
@@ -608,12 +566,8 @@ export async function improvementSuggestions(
 
   const summary =
     lang === "ar"
-      ? `درجة المطابقة الحالية ${score.toFixed(1)} / 10 مع تغطية ${mustPercent.toFixed(
-          1
-        )}% من المتطلبات الأساسية.`
-      : `Current alignment score ${score.toFixed(1)} / 10 covering ${mustPercent.toFixed(
-          1
-        )}% of must-have requirements.`;
+      ? `درجة المطابقة الحالية ${score.toFixed(1)} / 10 مع تغطية ${mustPercent.toFixed(1)}% من المتطلبات الأساسية.`
+      : `Current alignment score ${score.toFixed(1)} / 10 covering ${mustPercent.toFixed(1)}% of must-have requirements.`;
 
   const breakdownRows = Array.isArray(analysis.breakdown)
     ? analysis.breakdown
@@ -670,8 +624,8 @@ export async function improvementSuggestions(
           role: "user",
           content:
             (lang === "ar"
-              ? "حلّل البيانات التالية ثم أعد JSON بالشكل {\"summary\": string, \"suggestions\": string[]} بدون أي نص إضافي."
-              : "Review the data and respond with JSON shaped as {\"summary\": string, \"suggestions\": string[]} with no additional prose.") +
+              ? 'حلّل البيانات التالية ثم أعد JSON بالشكل {"summary": string, "suggestions": string[]} بدون أي نص إضافي.'
+              : 'Review the data and respond with JSON shaped as {"summary": string, "suggestions": string[]} with no additional prose.') +
             "\n" +
             payload,
         },
@@ -679,14 +633,12 @@ export async function improvementSuggestions(
       { temperature: 0.35 }
     );
 
-    if (ai?.summary && typeof ai.summary === "string") {
+    if (ai?.summary && typeof ai.summary === "string")
       finalSummary = ai.summary.trim();
-    }
-    if (Array.isArray(ai?.suggestions) && ai.suggestions.length) {
+    if (Array.isArray(ai?.suggestions) && ai.suggestions.length)
       finalSuggestions = ai.suggestions
-        .map((item) => String(item || "").trim())
+        .map((s) => String(s || "").trim())
         .filter(Boolean);
-    }
   } catch (err) {
     console.error("AI improvement suggestions failed", err);
   }
@@ -695,20 +647,9 @@ export async function improvementSuggestions(
     ok: true,
     summary: finalSummary,
     suggestions: finalSuggestions,
-    metrics: {
-      score,
-      mustPercent,
-      nicePercent,
-      missingMust,
-      improvement,
-    },
-    cv: {
-      id: cv.id,
-      name: cv.originalFilename || cv.id,
-    },
-    job: {
-      id: job.id,
-      title: job.title,
-    },
+    metrics: { score, mustPercent, nicePercent, missingMust, improvement },
+    cv: { id: cv.id, name: cv.originalFilename || cv.id },
+    job: { id: job.id, title: job.title },
   };
 }
+  

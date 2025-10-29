@@ -1,7 +1,8 @@
+// apps/api/src/routes/jobs.ts
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client";
 import { randomUUID } from "node:crypto";
-import { chatJson } from "../services/openai";
+import { chatJson } from "../services/openai.js"; // <-- مهم: .js للـ ESM
 
 function serializeRequirement(req: any) {
   if (!req) return req;
@@ -25,7 +26,8 @@ function serializeJob(job: any) {
 
 export async function jobsRoute(app: FastifyInstance) {
   const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gpt-4o-mini";
-  // POST /api/jobs  — إنشاء وظيفة
+
+  // POST /api/jobs — إنشاء وظيفة
   app.post("/", async (req, reply) => {
     try {
       const body: any = await req.body;
@@ -34,7 +36,7 @@ export async function jobsRoute(app: FastifyInstance) {
 
       const job = await prisma.job.create({
         data: {
-          id: randomUUID(), // ممكن تحذف هذا وتعتمد default(uuid())
+          id: randomUUID(), // يمكن حذفها والاعتماد على default(uuid())
           title,
           description: description ?? "",
         },
@@ -42,12 +44,24 @@ export async function jobsRoute(app: FastifyInstance) {
 
       if (Array.isArray(requirements) && requirements.length) {
         await prisma.jobRequirement.createMany({
-          data: requirements.map((r: any) => ({
-            jobId: job.id,
-            requirement: typeof r === "string" ? r : r.requirement,
-            mustHave: Boolean(r?.mustHave ?? true),
-            weight: Number(r?.weight ?? 1), // Decimal-compatible
-          })),
+          data: requirements
+            .map((r: any) => {
+              const requirement =
+                typeof r === "string" ? r : String(r?.requirement ?? "");
+              if (!requirement.trim()) return null;
+              return {
+                jobId: job.id,
+                requirement: requirement.slice(0, 240),
+                mustHave: Boolean(r?.mustHave ?? true),
+                weight: Number(r?.weight ?? 1) || 1, // Decimal-compatible
+              };
+            })
+            .filter(Boolean) as {
+            jobId: string;
+            requirement: string;
+            mustHave: boolean;
+            weight: number;
+          }[],
         });
       }
 
@@ -74,7 +88,7 @@ export async function jobsRoute(app: FastifyInstance) {
         include: { requirements: true },
       });
       if (!job) return reply.code(404).send({ error: "Not found" });
-      return serializeJob(job);
+      return reply.send(serializeJob(job));
     } catch (err: any) {
       app.log.error({ err }, "get job failed");
       return reply
@@ -89,7 +103,7 @@ export async function jobsRoute(app: FastifyInstance) {
       const list = await prisma.job.findMany({
         include: { requirements: true },
       });
-      return { items: list.map((job) => serializeJob(job)) };
+      return reply.send({ items: list.map((job) => serializeJob(job)) });
     } catch (err: any) {
       return reply
         .code(500)
@@ -97,30 +111,32 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 
-  // POST /api/jobs/suggest  — استخراج متطلبات من JD بالـ AI
+  // POST /api/jobs/suggest — استخراج متطلبات من JD بالـ AI (ديناميكي)
   app.post("/suggest", async (req, reply) => {
     try {
       const { jdText } = (await req.body) as any;
       const raw = typeof jdText === "string" ? jdText : String(jdText ?? "");
       const trimmed = raw.trim();
-      if (!trimmed)
-        return reply.code(400).send({ error: "jdText required" });
+      if (!trimmed) return reply.code(400).send({ error: "jdText required" });
 
       if (!process.env.OPENAI_API_KEY) {
-        return reply
-          .code(503)
-          .send({ error: "OPENAI_API_KEY missing" });
+        return reply.code(503).send({ error: "OPENAI_API_KEY missing" });
       }
 
       const lang = /[\u0600-\u06FF]/.test(trimmed) ? "ar" : "en";
       const system =
         lang === "ar"
-          ? "أنت مستشار توظيف. استخرج متطلبات تقنية موجزة من الوصف التالي وأعد JSON فقط بالشكل {\"items\": [{\"requirement\": string, \"mustHave\": boolean, \"weight\": number}]} بدون أي شرح إضافي."
-          : "You are a hiring assistant. Extract concise technical requirements from the description and respond with JSON only shaped as {\"items\": [{\"requirement\": string, \"mustHave\": boolean, \"weight\": number}]} with no extra prose.";
+          ? 'أنت مستشار توظيف. استخرج متطلبات مختصرة من وصف الوظيفة وأعد JSON فقط بالشكل {"items": [{"requirement": string, "mustHave": boolean, "weight": number}]} بدون أي شرح إضافي.'
+          : 'You are a hiring assistant. Extract concise requirements from the job description and respond with JSON only shaped as {"items": [{"requirement": string, "mustHave": boolean, "weight": number}]} with no extra prose.';
 
       const payload = trimmed.slice(0, 3200);
+
       const ai = await chatJson<{
-        items?: Array<{ requirement?: string; mustHave?: boolean; weight?: number }>;
+        items?: Array<{
+          requirement?: string;
+          mustHave?: boolean;
+          weight?: number;
+        }>;
       }>(
         [
           { role: "system", content: system },
@@ -128,8 +144,8 @@ export async function jobsRoute(app: FastifyInstance) {
             role: "user",
             content:
               (lang === "ar"
-                ? "حوّل الوصف إلى متطلبات مختصرة مع تحديد الأهم ووزنه (1-3)."
-                : "Turn the description into concise requirements, mark must-haves and weights (1-3).") +
+                ? "حوّل الوصف إلى متطلبات موجزة، عيّن mustHave ووزن (1-3) لكل بند."
+                : "Convert the description into concise requirements, set mustHave and a weight (1-3) for each item.") +
               "\n" +
               payload,
           },
@@ -157,11 +173,12 @@ export async function jobsRoute(app: FastifyInstance) {
 
       let items = normalize(ai?.items ?? []);
 
+      // بعض النماذج قد تعيد مصفوفة مباشرة
       if (!items.length && Array.isArray(ai as any)) {
         items = normalize(ai as any);
       }
 
-      // fallback: استخرج البنود يدويًا من الأسطر
+      // Fallback بسيط لو فشل الـ AI: قص الأسطر كرؤوس متطلبات
       if (!items.length) {
         const fallback = trimmed
           .split(/\r?\n|[•\-–•]/g)
@@ -170,8 +187,10 @@ export async function jobsRoute(app: FastifyInstance) {
           .slice(0, 12)
           .map((line) => ({
             requirement: line.slice(0, 160),
-            mustHave: /must|أساسي|خبرة|خبرة قوية|required|fundamental/i.test(line),
-            weight: /senior|lead|expert|10\+|8\+|15\+|خبير|قوي/i.test(line) ? 3 : 1,
+            mustHave: /must|أساسي|خبرة|required|fundamental/i.test(line),
+            weight: /senior|lead|expert|10\+|8\+|15\+|خبير|قوي/i.test(line)
+              ? 3
+              : 1,
           }));
         items = fallback;
       }
@@ -185,6 +204,7 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 
+  // POST /api/jobs/:id/requirements — إضافة متطلبات
   app.post("/:id/requirements", async (req, reply) => {
     try {
       const { id } = req.params as any;
@@ -235,6 +255,7 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 
+  // PATCH /api/jobs/requirements/:id — تعديل متطلب
   app.patch("/requirements/:id", async (req, reply) => {
     try {
       const { id } = req.params as any;
@@ -247,9 +268,7 @@ export async function jobsRoute(app: FastifyInstance) {
       if (body?.requirement !== undefined) {
         const text = String(body.requirement ?? "").trim();
         if (!text) {
-          return reply
-            .code(400)
-            .send({ error: "requirement cannot be empty" });
+          return reply.code(400).send({ error: "requirement cannot be empty" });
         }
         data.requirement = text.slice(0, 240);
       }
@@ -279,6 +298,7 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 
+  // DELETE /api/jobs/requirements/:id — حذف متطلب
   app.delete("/requirements/:id", async (req, reply) => {
     try {
       const { id } = req.params as any;
@@ -298,3 +318,4 @@ export async function jobsRoute(app: FastifyInstance) {
     }
   });
 }
+  
