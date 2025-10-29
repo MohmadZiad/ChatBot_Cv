@@ -33,6 +33,45 @@ const parseBulletLines = (text: string): string[] =>
     .filter(Boolean)
     .slice(0, 8);
 
+const LANGUAGE_HINTS: Array<{ label: string; patterns: RegExp[] }> = [
+  {
+    label: "العربية",
+    patterns: [/\bArabic\b/i, /\bArabic language\b/i, /\bالعربية\b/, /\bعربي\b/],
+  },
+  {
+    label: "الإنجليزية",
+    patterns: [/\bEnglish\b/i, /\bالإنجليزية\b/, /\bانجليزي\b/],
+  },
+  {
+    label: "الفرنسية",
+    patterns: [/\bFrench\b/i, /\bالفرنسية\b/, /\bفرنسي\b/],
+  },
+  {
+    label: "الألمانية",
+    patterns: [/\bGerman\b/i, /\bالألمانية\b/, /\bألماني\b/],
+  },
+  {
+    label: "الإسبانية",
+    patterns: [/\bSpanish\b/i, /\bالإسبانية\b/, /\bإسباني\b/],
+  },
+];
+
+const detectLanguages = (text: string | null | undefined): string[] => {
+  if (!text) return [];
+  const normalized = text
+    .replace(/[\u064B-\u065F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return [];
+  const results = new Set<string>();
+  for (const hint of LANGUAGE_HINTS) {
+    if (hint.patterns.some((re) => re.test(normalized))) {
+      results.add(hint.label);
+    }
+  }
+  return Array.from(results);
+};
+
 const riskCopy: Record<string, { ar: string; en: string }> = {
   must_threshold: {
     ar: "متطلبات الـmust أقل من الحد المطلوب.",
@@ -56,6 +95,14 @@ const toPercent = (value: number | null | undefined) => {
   const safe = Number.isFinite(value ?? NaN) ? Number(value) : 0;
   return `${Math.max(0, Math.min(100, safe)).toFixed(1)}%`;
 };
+
+const toScore10 = (value: number | null | undefined) => {
+  const raw = Number(value ?? 0);
+  if (!Number.isFinite(raw)) return 0;
+  return raw > 10 ? raw / 10 : raw;
+};
+
+const formatScore10 = (value: number | null | undefined) => toScore10(value).toFixed(2);
 
 const formatDate = (value: string | null | undefined, lang: string) => {
   if (!value) return null;
@@ -135,6 +182,44 @@ export default function ResultDetail() {
   const [quickSummary, setQuickSummary] = useState<string[]>([]);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [quickLoading, setQuickLoading] = useState(false);
+
+  const fallbackLanguages = useMemo(() => {
+    const chunks = [job?.description ?? "", jobFields?.notes ?? ""].filter(Boolean);
+    if (!chunks.length) return [] as string[];
+    return detectLanguages(chunks.join("\n"));
+  }, [job?.description, jobFields?.notes]);
+
+  const displayLanguages = useMemo(() => {
+    const sourceMap = new Map<string, string>();
+    (jobFields?.languages ?? []).forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "structured");
+    });
+    aiLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "assistant");
+    });
+    fallbackLanguages.forEach((langItem) => {
+      const label = (langItem || "").trim();
+      if (!label) return;
+      if (!sourceMap.has(label)) sourceMap.set(label, "detected");
+    });
+    return Array.from(sourceMap.entries()).map(([label, source]) => ({
+      label,
+      source,
+    }));
+  }, [aiLanguages, fallbackLanguages, jobFields?.languages]);
+
+  const languageSourceCopy = useMemo(
+    () => ({
+      structured: lang === "ar" ? "من الحقول" : "JD",
+      assistant: lang === "ar" ? "ذكاء" : "AI",
+      detected: lang === "ar" ? "مكتشف" : "Detected",
+    }),
+    [lang],
+  );
 
   useEffect(() => {
     if (!params?.id) return;
@@ -312,13 +397,9 @@ export default function ResultDetail() {
   const risks = metrics?.riskFlags ?? [];
   const evidence = data.evidence?.slice(0, 4) ?? [];
   const generatedAt = formatDate(metrics?.generatedAt ?? data.updatedAt, lang);
-  const scoreValue = Number(data.score ?? metrics?.weightedScore ?? 0);
-  const combinedLanguages =
-    jobFields?.languages?.length
-      ? jobFields.languages
-      : aiLanguages.length
-        ? aiLanguages
-        : [];
+  const scoreRaw = data.score ?? metrics?.weightedScore ?? 0;
+  const scoreValue = toScore10(scoreRaw);
+  const scoreLabel = formatScore10(scoreRaw);
   const combinedExperience =
     jobFields?.required_experience_years?.trim() ||
     aiExperience?.required_experience_years?.trim() ||
@@ -384,7 +465,7 @@ export default function ResultDetail() {
                 {jobCopy.heading}
               </div>
               <h2 className="text-xl font-semibold text-[#2F3A4A] dark:text-white">
-                {job.title}
+                {jobFields?.title?.trim() || job.title}
               </h2>
               <p className="text-sm leading-relaxed text-[#2F3A4A]/70 dark:text-white/70">
                 {jobFields?.summary?.trim()
@@ -463,14 +544,17 @@ export default function ResultDetail() {
               <div className="mt-3 rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-xs text-red-700">
                 {languagesError}
               </div>
-            ) : combinedLanguages.length ? (
+            ) : displayLanguages.length ? (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                {combinedLanguages.map((item) => (
+                {displayLanguages.map(({ label, source }) => (
                   <span
-                    key={item}
-                    className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] dark:bg-white/10 dark:text-white/80"
+                    key={`${label}-${source}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#D85E00] shadow-sm dark:bg-white/10 dark:text-white/80"
                   >
-                    {item}
+                    {label}
+                    <span className="text-[10px] font-normal uppercase tracking-wide text-[#B54708]">
+                      {languageSourceCopy[source as keyof typeof languageSourceCopy] ?? "AI"}
+                    </span>
                   </span>
                 ))}
               </div>
@@ -524,7 +608,7 @@ export default function ResultDetail() {
           <div className="flex flex-col items-center justify-center rounded-3xl bg-gradient-to-br from-[#FF7A00] via-[#FF9440] to-[#A259FF] px-6 py-8 text-white shadow-lg">
             <ScoreGauge value={scoreValue} />
             <div className="mt-4 text-sm font-medium">
-              {tt("analysisPage.scoreLabel")} {scoreValue.toFixed(2)} / 10
+              {tt("analysisPage.scoreLabel")} {scoreLabel} / 10
             </div>
             <div className="mt-1 text-[11px] text-white/70">
               {tt("analysisPage.status")} {data.status}

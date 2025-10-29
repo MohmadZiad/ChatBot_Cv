@@ -358,6 +358,7 @@ export default function AIConsole() {
   const [assistantTemplate, setAssistantTemplate] = React.useState<RequirementsTemplate | null>(null);
   const [candidateProfile, setCandidateProfile] = React.useState("");
   const [candidateHelperResult, setCandidateHelperResult] = React.useState<CandidateHelper | null>(null);
+  const autoExtractSignature = React.useRef<string>("");
 
   const [activeStep, setActiveStep] = React.useState(1);
   const maxStep = React.useMemo(() => {
@@ -653,6 +654,21 @@ export default function AIConsole() {
       setCandidateHelperResult(res);
     });
   }, [candidateProfile, jobDescriptionForAssistant, lang, runAssistant]);
+
+  React.useEffect(() => {
+    const signature = jobDescriptionForAssistant.trim();
+    if (!signature) {
+      autoExtractSignature.current = "";
+      return;
+    }
+    if (assistantLoading) return;
+    if (signature === autoExtractSignature.current) return;
+    const timer = window.setTimeout(() => {
+      autoExtractSignature.current = signature;
+      handleAssistantExtract();
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [assistantLoading, handleAssistantExtract, jobDescriptionForAssistant]);
 
   const assistantLanguagesList =
     assistantLanguages?.languages?.length
