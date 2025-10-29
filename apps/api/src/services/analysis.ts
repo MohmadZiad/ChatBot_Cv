@@ -1,7 +1,7 @@
 // apps/api/src/services/analysis.ts
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
-import { embedTexts } from "./openai.js";
+import { embedTexts, chatJson } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvEmbeddings } from "./embeddings.js";
 
@@ -16,6 +16,46 @@ const httpError = (
   e.code = code;
   return e;
 };
+
+function normalizeForKeywords(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\u064b-\u0652]/g, "")
+    .replace(/[^\p{L}\p{N}+#./\s-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeRequirement(value: string): string[] {
+  const base = normalizeForKeywords(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 || /[+#.]/.test(token));
+  const unique = new Set<string>();
+  for (const token of base) {
+    if (!token) continue;
+    unique.add(token);
+    const compact = token.replace(/[.\-_/\s]+/g, "");
+    if (compact && compact !== token) unique.add(compact);
+  }
+  return Array.from(unique.values());
+}
+
+function keywordRatio(tokens: string[], text: string): number {
+  if (!tokens.length) return 0;
+  const normalized = normalizeForKeywords(text);
+  if (!normalized) return 0;
+  const compact = normalized.replace(/[.\-_/\s]+/g, "");
+  let hits = 0;
+  for (const token of tokens) {
+    if (!token) continue;
+    if (normalized.includes(token) || compact.includes(token)) {
+      hits++;
+      continue;
+    }
+  }
+  return hits / tokens.length;
+}
 
 function gapsFrom(perReq: any[]) {
   const missing = perReq
@@ -84,6 +124,25 @@ export async function runAnalysis(jobId: string, cvId: string) {
     for (let j = 0; j < chunks.length; j++) {
       const sim = cosine(rv, chunks[j].embedding || []);
       if (sim > best.score) best = { score: sim, idx: j };
+    }
+
+    const keywordTokens = tokenizeRequirement(r.requirement);
+    if (keywordTokens.length) {
+      let boostedScore = best.score;
+      let boostedIdx = best.idx;
+      for (let j = 0; j < chunks.length; j++) {
+        const ratio = keywordRatio(keywordTokens, chunks[j].content || "");
+        if (ratio >= 0.55) {
+          const candidate = Math.min(0.98, 0.55 + ratio * 0.45);
+          if (candidate > boostedScore) {
+            boostedScore = candidate;
+            boostedIdx = j;
+          }
+        }
+      }
+      if (boostedScore > best.score) {
+        best = { score: boostedScore, idx: boostedIdx };
+      }
     }
 
     const base10 = Math.round(best.score * 10);
@@ -470,9 +529,85 @@ export async function improvementSuggestions(
           1
         )}% of must-have requirements.`;
 
+  const breakdownRows = Array.isArray((analysis as any)?.breakdown)
+    ? ((analysis as any).breakdown as any[])
+    : [];
+  const lowlights = breakdownRows
+    .filter((row) => Number(row?.score10 ?? 0) < 7)
+    .slice(0, 6)
+    .map((row) => ({
+      requirement: String(row?.requirement ?? ""),
+      score: Number(row?.score10 ?? row?.similarity ?? 0),
+      mustHave: Boolean(row?.mustHave),
+    }));
+  const highlights = breakdownRows
+    .filter((row) => Number(row?.score10 ?? 0) >= 8)
+    .slice(0, 6)
+    .map((row) => ({
+      requirement: String(row?.requirement ?? ""),
+      score: Number(row?.score10 ?? row?.similarity ?? 0),
+      mustHave: Boolean(row?.mustHave),
+    }));
+
+  let finalSummary = summary;
+  let finalSuggestions = [...suggestions];
+
+  try {
+    const system =
+      lang === "ar"
+        ? "أنت مساعد توظيف محترف. حلّل بيانات السيرة الذاتية والوظيفة وقدّم خلاصة قصيرة واقتراحات قابلة للتنفيذ باللغة العربية فقط."
+        : "You are an expert talent intelligence assistant. Analyse the structured data and respond in concise English only.";
+    const payload = JSON.stringify(
+      {
+        jobTitle: job.title,
+        candidate: cv.originalFilename || cv.id,
+        score,
+        mustPercent,
+        nicePercent,
+        gatePassed: metrics?.gatePassed ?? mustPercent >= 80,
+        missingMust,
+        improvement,
+        highlights,
+        lowlights,
+        currentSummary: summary,
+        currentSuggestions: suggestions,
+        lang,
+      },
+      null,
+      2
+    );
+
+    const ai = await chatJson<{ summary?: string; suggestions?: string[] }>(
+      [
+        { role: "system", content: system },
+        {
+          role: "user",
+          content:
+            (lang === "ar"
+              ? "حلّل البيانات التالية ثم أعد JSON بالشكل {\"summary\": string, \"suggestions\": string[]} بدون أي نص إضافي."
+              : "Review the data and respond with JSON shaped as {\"summary\": string, \"suggestions\": string[]} with no additional prose.") +
+            "\n" +
+            payload,
+        },
+      ],
+      { temperature: 0.35 }
+    );
+
+    if (ai?.summary && typeof ai.summary === "string") {
+      finalSummary = ai.summary.trim();
+    }
+    if (Array.isArray(ai?.suggestions) && ai.suggestions.length) {
+      finalSuggestions = ai.suggestions
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+    }
+  } catch (err) {
+    console.error("AI improvement suggestions failed", err);
+  }
+
   return {
-    summary,
-    suggestions,
+    summary: finalSummary,
+    suggestions: finalSuggestions,
     metrics: {
       score,
       mustPercent,

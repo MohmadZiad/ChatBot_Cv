@@ -4,9 +4,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
-import { MessageCircle, X, Play, Loader2, Wand2 } from "lucide-react";
+import {
+  MessageCircle,
+  X,
+  Play,
+  Loader2,
+  Wand2,
+  AlertTriangle,
+  ArrowUpRight,
+} from "lucide-react";
 import ScoreGauge from "./ui/ScoreGauge";
-import { type Lang, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
+import { useLang } from "@/lib/use-lang";
 import { cvApi } from "@/services/api/cv";
 import { jobsApi } from "@/services/api/jobs";
 import { analysesApi, type Analysis } from "@/services/api/analyses";
@@ -17,44 +26,42 @@ type Msg = { role: MsgRole; text: string; kind?: "intro" | "error" | "info" };
 const CHAT_STORAGE_KEY = "cv-chat-history-v2";
 const MAX_SELECTED = 4;
 
+const riskCopy: Record<string, { ar: string; en: string }> = {
+  must_threshold: {
+    ar: "لم تتجاوز متطلبات الـmust العتبة المطلوبة.",
+    en: "Must-have requirements remain below the acceptance threshold.",
+  },
+  low_total: {
+    ar: "النتيجة الكلية منخفضة — راجع المتطلبات الحساسة.",
+    en: "Overall score is low — review the critical requirements.",
+  },
+  no_requirements: {
+    ar: "لا توجد متطلبات كافية لتقييمها.",
+    en: "No requirements were provided for this analysis.",
+  },
+  no_text: {
+    ar: "لم يتم استخراج نص من السيرة الذاتية.",
+    en: "No text could be extracted from the CV.",
+  },
+};
+
+const toPercent = (value: number | null | undefined) => {
+  const safe = Number.isFinite(value ?? NaN) ? Number(value) : 0;
+  return `${Math.max(0, Math.min(100, safe)).toFixed(1)}%`;
+};
+
 type CompletedEventDetail = {
   analysis: Analysis;
   job?: { id?: string | null } | null;
 };
 
-/** Safe helper to read language from localStorage (client-only). */
-function getLangFromStorage(): Lang {
-  try {
-    if (typeof window !== "undefined") {
-      return (window.localStorage.getItem("lang") as Lang) || "ar";
-    }
-  } catch {
-    // ignore read errors
-  }
-  return "ar";
-}
-
 export default function Chatbot() {
   // Modal state
   const [open, setOpen] = useState(false);
 
-  /**
-   * IMPORTANT: Do NOT read localStorage during the initial render.
-   * Use a stable default ("ar") and hydrate from localStorage in useEffect.
-   * This avoids "localStorage is not defined" on the first render.
-   */
-  const [lang, setLang] = useState<Lang>("ar");
-
+  const lang = useLang();
   // Translation shortcut that re-computes when `lang` changes
   const tt = useMemo(() => (p: string) => t(lang, p), [lang]);
-
-  // Hydrate language after mount and listen for cross-tab changes
-  useEffect(() => {
-    setLang(getLangFromStorage());
-    const onStorage = () => setLang(getLangFromStorage());
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
 
   // Chat log
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -610,64 +617,209 @@ export default function Chatbot() {
                   <motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm space-y-4"
+                    className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/95 p-4 shadow-sm"
                   >
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
-                      <div className="grid place-items-center rounded-2xl bg-[var(--surface-muted)]/60 p-4">
-                        <ScoreGauge value={Number(result.score || 0)} />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-lg font-semibold text-[var(--color-primary)]">
-                          {tt('chat.score')} • {Number(result.score || 0).toFixed(2)}
-                        </div>
-                        <div className="text-xs text-[var(--color-text-muted)]">
-                          model: {result.model} • status: {result.status}
-                        </div>
-                        {result.gaps && (
-                          <div className="flex flex-wrap gap-2 text-[11px]">
-                            {result.gaps.mustHaveMissing?.map((g) => (
-                              <span
-                                key={`must-${g}`}
-                                className="rounded-full bg-[#fee4e2] px-2 py-1 text-[#b42318]"
-                              >
-                                Must: {g}
-                              </span>
-                            ))}
-                            {result.gaps.improve?.map((g) => (
-                              <span
-                                key={`imp-${g}`}
-                                className="rounded-full bg-[#fef0c7] px-2 py-1 text-[#b54708]"
-                              >
-                                Improve: {g}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    {(() => {
+                      const metrics = result.metrics ?? null;
+                      const gaps = result.gaps ?? null;
+                      const missingMust =
+                        metrics?.missingMust?.length
+                          ? metrics.missingMust
+                          : gaps?.mustHaveMissing ?? [];
+                      const improvement =
+                        metrics?.improvement?.length
+                          ? metrics.improvement
+                          : gaps?.improve ?? [];
+                      const strengths = metrics?.topStrengths ?? [];
+                      const risks = metrics?.riskFlags ?? [];
+                      const generatedAt = metrics?.generatedAt
+                        ? new Date(metrics.generatedAt)
+                        : null;
 
-                    {Array.isArray(result.breakdown) && result.breakdown.length > 0 && (
+                      return (
+                        <>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[160px_1fr]">
+                            <div className="grid place-items-center rounded-2xl bg-[var(--surface-muted)]/60 p-4">
+                              <ScoreGauge value={Number(result.score ?? metrics?.weightedScore ?? 0)} />
+                            </div>
+                            <div className="space-y-3">
+                              <div>
+                                <div className="text-lg font-semibold text-[var(--color-primary)]">
+                                  {tt("chat.score")} • {Number(result.score ?? metrics?.weightedScore ?? 0).toFixed(2)}
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                  <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
+                                    status: {result.status}
+                                  </span>
+                                  {result.model ? (
+                                    <span className="rounded-full bg-[var(--surface-soft)] px-2 py-1">
+                                      model: {result.model}
+                                    </span>
+                                  ) : null}
+                                  {generatedAt ? (
+                                    <span>
+                                      {generatedAt.toLocaleString(lang === "ar" ? "ar" : "en", {
+                                        hour12: false,
+                                      })}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                  <div className="text-[11px] text-[var(--color-text-muted)]">
+                                    {tt("chat.mustPercent")}
+                                  </div>
+                                  <div className="text-sm font-semibold text-[var(--foreground)]">
+                                    {toPercent(metrics?.mustPercent)}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                  <div className="text-[11px] text-[var(--color-text-muted)]">
+                                    {tt("chat.nicePercent")}
+                                  </div>
+                                  <div className="text-sm font-semibold text-[var(--foreground)]">
+                                    {toPercent(metrics?.nicePercent)}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs">
+                                  <div className="text-[11px] text-[var(--color-text-muted)]">
+                                    {tt("chat.gatePassed")}
+                                  </div>
+                                  <div className="text-sm font-semibold text-[var(--foreground)]">
+                                    {metrics?.gatePassed ? "✓" : "✗"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 text-[11px] text-[var(--color-text-muted)]">
+                                {missingMust.length ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold text-[var(--color-primary)]">
+                                      {tt("chat.missingMust")}
+                                    </span>
+                                    {missingMust.map((item) => (
+                                      <span
+                                        key={`miss-${item}`}
+                                        className="rounded-full bg-[#fee4e2] px-3 py-1 text-[#b42318]"
+                                      >
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {improvement.length ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold text-[#d4850d]">
+                                      {tt("chat.improvements")}
+                                    </span>
+                                    {improvement.map((item) => (
+                                      <span
+                                        key={`imp-${item}`}
+                                        className="rounded-full bg-[#fef0c7] px-3 py-1 text-[#b54708]"
+                                      >
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {risks.length ? (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold text-[#b42318]">
+                                      {tt("chat.risks")}
+                                    </span>
+                                    {risks.map((flag) => (
+                                      <span
+                                        key={`risk-${flag}`}
+                                        className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
+                                      >
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        {riskCopy[flag]?.[lang] ?? flag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {!missingMust.length && !improvement.length && !risks.length ? (
+                                  <div className="rounded-full bg-[var(--surface-soft)] px-3 py-1 text-center">
+                                    {tt("chat.stored")}
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--color-text-muted)]">
+                                <span>{tt("chat.stored")}</span>
+                                <a
+                                  href={`/analysis/${result.id}`}
+                                  className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/40 px-3 py-1 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                                >
+                                  {tt("chat.viewFull")} <ArrowUpRight className="h-3.5 w-3.5" />
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+
+                          {strengths.length ? (
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold text-[var(--color-text-muted)]">
+                                {tt("chat.strengths")}
+                              </div>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                {strengths.map((item) => (
+                                  <div
+                                    key={`${item.requirement}-${item.score}`}
+                                    className="rounded-full border border-[var(--color-secondary)]/40 bg-[var(--surface-soft)] px-3 py-1"
+                                  >
+                                    {item.requirement} • {item.score.toFixed(1)} / 10
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+
+                    {Array.isArray(result.breakdown) && result.breakdown.length > 0 ? (
                       <div className="space-y-2">
                         <div className="text-sm font-semibold text-[var(--color-text-muted)]">
-                          Breakdown
+                          {tt("chat.breakdown") ?? "Breakdown"}
                         </div>
-                        <div className="max-h-64 space-y-2 overflow-auto pr-1">
-                          {result.breakdown.map((r: any, idx: number) => (
+                        <div className="max-h-64 space-y-3 overflow-auto pr-1">
+                          {result.breakdown.map((row, idx) => (
                             <div
-                              key={`row-${idx}`}
-                              className="rounded-xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 px-3 py-2 text-xs"
+                              key={`${row.requirement}-${idx}`}
+                              className="rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/60 p-3 text-xs"
                             >
-                              <div className="text-sm font-medium text-[var(--foreground)]">
-                                {r.requirement}
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="text-sm font-medium text-[var(--foreground)]">
+                                  {row.requirement}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+                                  <span className="rounded-full bg-white/60 px-2 py-1">
+                                    {row.mustHave ? "Must" : "Nice"}
+                                  </span>
+                                  <span className="rounded-full bg-white/60 px-2 py-1">
+                                    {tt("chat.weightLabel")}: {row.weight}
+                                  </span>
+                                  <span className="rounded-full bg-white/60 px-2 py-1">
+                                    sim {(row.similarity * 100).toFixed(1)}%
+                                  </span>
+                                  <span className="rounded-full bg-white/60 px-2 py-1">
+                                    {row.score10.toFixed(1)} / 10
+                                  </span>
+                                </div>
                               </div>
-                              <div className="text-[11px] text-[var(--color-text-muted)]">
-                                must:{r.mustHave ? '✓' : '—'} • weight: {r.weight} • sim: {(r.similarity * 100).toFixed(1)}% • score: {Number(r.score10 || 0).toFixed(1)}
-                              </div>
+                              {row.bestChunk?.excerpt ? (
+                                <p className="mt-2 line-clamp-3 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+                                  {row.bestChunk.excerpt}
+                                </p>
+                              ) : null}
                             </div>
                           ))}
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </motion.div>
                 )}
               </div>

@@ -16,6 +16,7 @@ import {
   FileText,
   Filter,
   Loader2,
+  Sparkles,
   Pin,
   RefreshCw,
   Trash2,
@@ -25,8 +26,13 @@ import {
 } from "lucide-react";
 import { cvApi } from "@/services/api/cv";
 import { jobsApi, type JobRequirement } from "@/services/api/jobs";
-import { analysesApi, type Analysis } from "@/services/api/analyses";
+import {
+  analysesApi,
+  type Analysis,
+  type ImproveResponse,
+} from "@/services/api/analyses";
 import type { Lang } from "@/lib/i18n";
+import { useLang } from "@/lib/use-lang";
 
 type UploadStatus =
   | "pending"
@@ -84,6 +90,7 @@ type CandidateResult = {
   meta: CandidateMeta;
   scores: CandidateScores;
   analysis: Analysis & { message?: string };
+  ai?: Pick<ImproveResponse, "summary" | "suggestions" | "metrics"> | null;
 };
 
 type SortKey =
@@ -115,6 +122,9 @@ type ExperienceBand = {
 
 type Option = { id: string; label: { ar: string; en: string } };
 type SkillSuggestion = { id: string; label: string };
+
+const getOptionLabel = (option: Option, lang: Lang) =>
+  option.label?.[lang] ?? option.label?.ar ?? option.label?.en ?? option.id;
 
 const experienceBands: ExperienceBand[] = [
   { id: "0-1", label: { ar: "0 - 1 سنة", en: "0-1 years" }, min: 0, max: 1 },
@@ -276,6 +286,7 @@ const COPY = {
         languages: "يتحدث {value}.",
         projects: "يملك {value} مشاريع أو روابط موثوقة.",
         quality: "تنسيق السيرة واضح ومنظم.",
+        skill: "مهارة {value} بدرجة {score}/10.",
       },
       weaknesses: {
         experienceLow: "الخبرة ({value} سنة) أقل من المطلوب ({target}).",
@@ -283,6 +294,7 @@ const COPY = {
         qualityLow: "تنسيق السيرة يحتاج تحسين.",
         missingMust: "يفتقد: {items}.",
         aiGaps: "مجالات للتحسين: {items}.",
+        aiSuggestion: "اقتراح تحسين: {item}.",
       },
     },
     comparison: {
@@ -429,6 +441,7 @@ const COPY = {
         languages: "Speaks {value}.",
         projects: "Has {value} relevant projects or links.",
         quality: "Resume is well structured and clear.",
+        skill: "Skill {value} scored {score}/10.",
       },
       weaknesses: {
         experienceLow:
@@ -437,6 +450,7 @@ const COPY = {
         qualityLow: "Resume formatting needs improvement.",
         missingMust: "Missing: {items}.",
         aiGaps: "Improve: {items}.",
+        aiSuggestion: "AI recommendation: {item}.",
       },
     },
     comparison: {
@@ -519,40 +533,6 @@ function fmt(
     out = out.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
   }
   return out;
-}
-
-function useLang(): Lang {
-  const [lang, setLang] = React.useState<Lang>("ar");
-
-  React.useEffect(() => {
-    const readLang = () => {
-      try {
-        return (window.localStorage.getItem("lang") as Lang) || "ar";
-      } catch {
-        return "ar";
-      }
-    };
-
-    setLang(readLang());
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === "lang") setLang(readLang());
-    };
-
-    const onCustom = (event: Event) => {
-      const detail = (event as CustomEvent<Lang>).detail;
-      if (detail) setLang(detail);
-    };
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("lang-change", onCustom as EventListener);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("lang-change", onCustom as EventListener);
-    };
-  }, []);
-
-  return lang;
 }
 
 function detectLanguages(text: string): string[] {
@@ -799,6 +779,7 @@ function buildAiNarrative(
   const texts = copy.insights;
   const strengths: string[] = [];
   const weaknesses: string[] = [];
+  const ai = result.ai;
 
   if (scores.duplicateOf) {
     const summary = fmt(texts.summary.duplicate, {
@@ -808,7 +789,11 @@ function buildAiNarrative(
   }
 
   const scoreText = formatPercent(scores.finalScore);
-  const summary = fmt(texts.summary[scores.status], { score: scoreText });
+  let summary = fmt(texts.summary[scores.status], { score: scoreText });
+
+  if (ai?.summary) {
+    summary = ai.summary;
+  }
 
   if (!scores.gatePassed) {
     weaknesses.push(texts.gateFail);
@@ -847,6 +832,21 @@ function buildAiNarrative(
     strengths.push(texts.strengths.quality);
   }
 
+  const topStrengths = Array.isArray(analysis.metrics?.topStrengths)
+    ? analysis.metrics?.topStrengths ?? []
+    : [];
+  if (topStrengths.length) {
+    topStrengths.slice(0, 4).forEach((item) => {
+      if (!item?.requirement) return;
+      strengths.push(
+        fmt(texts.strengths.skill, {
+          value: item.requirement,
+          score: Number(item.score ?? item.similarity ?? 0).toFixed(1),
+        })
+      );
+    });
+  }
+
   if (scores.experienceStatus === "below" && meta.yearsExperience != null) {
     // قبل: b.id === jobConfig.experienceBand ?? ""
     const band = experienceBands.find(
@@ -870,20 +870,42 @@ function buildAiNarrative(
   if (scores.qualityScore < 55) {
     weaknesses.push(texts.weaknesses.qualityLow);
   }
-  if (scores.missingMust?.length) {
+
+  const missingMust =
+    ai?.metrics?.missingMust?.length
+      ? ai.metrics.missingMust
+      : scores.missingMust?.length
+        ? scores.missingMust
+        : (analysis.gaps as any)?.mustHaveMissing ?? [];
+  if (missingMust.length) {
     weaknesses.push(
       fmt(texts.weaknesses.missingMust, {
-        items: formatList(scores.missingMust, lang),
+        items: formatList(missingMust, lang),
       })
     );
   }
-  const improve = (analysis.gaps as any)?.improve ?? [];
-  if (improve.length) {
+
+  const improvables =
+    ai?.metrics?.improvement?.length
+      ? ai.metrics.improvement
+      : (analysis.gaps as any)?.improve ?? [];
+  if (improvables.length) {
     weaknesses.push(
       fmt(texts.weaknesses.aiGaps, {
-        items: formatList(improve.slice(0, 5), lang),
+        items: formatList(improvables.slice(0, 6), lang),
       })
     );
+  }
+
+  if (Array.isArray(ai?.suggestions) && ai.suggestions.length) {
+    ai.suggestions.forEach((item) => {
+      if (!item) return;
+      weaknesses.push(
+        fmt(texts.weaknesses.aiSuggestion, {
+          item,
+        })
+      );
+    });
   }
 
   return { summary, strengths, weaknesses };
@@ -1244,6 +1266,25 @@ export default function TalentWorkflow() {
           duplicateEntry?.id
         );
 
+        let aiInsights: CandidateResult["ai"] = null;
+        try {
+          const improve = await analysesApi.improve({
+            jobId: ensuredJobId,
+            cvId: uploadRes.cvId,
+            lang,
+          });
+          aiInsights = {
+            summary: improve.summary,
+            suggestions: improve.suggestions,
+            metrics: improve.metrics,
+          };
+          if (improve.metrics?.missingMust?.length) {
+            scores.missingMust = improve.metrics.missingMust;
+          }
+        } catch (aiError) {
+          console.error("Failed to fetch AI refinement", aiError);
+        }
+
         const candidate: CandidateResult = {
           id: randomId(),
           uploadId: item.id,
@@ -1252,6 +1293,7 @@ export default function TalentWorkflow() {
           meta,
           scores,
           analysis: finalAnalysis,
+          ai: aiInsights,
         };
 
         setResults((prev) => {
@@ -1307,6 +1349,7 @@ export default function TalentWorkflow() {
       copy.notifications.error,
       experienceBand,
       pushBanner,
+      lang,
     ]
   );
 
@@ -1523,11 +1566,23 @@ export default function TalentWorkflow() {
         </body>
       </html>
     `;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
     const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    win.focus();
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } else {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `manager-report-${Date.now()}.html`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
     pushBanner({ type: "success", text: copy.report.generated });
   }, [
     results,
@@ -1769,7 +1824,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    {getOptionLabel(option, lang)}
                   </button>
                 ))}
               </div>
@@ -1794,7 +1849,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    {getOptionLabel(option, lang)}
                   </button>
                 ))}
               </div>
@@ -1819,7 +1874,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    {getOptionLabel(option, lang)}
                   </button>
                 ))}
               </div>
@@ -1840,7 +1895,7 @@ export default function TalentWorkflow() {
                         : "border-[#FF7A00]/30 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
                     )}
                   >
-                    option.label[lang]
+                    {getOptionLabel(option, lang)}
                   </button>
                 ))}
               </div>
@@ -2340,23 +2395,36 @@ export default function TalentWorkflow() {
                       {item.meta.lastCompany || "—"}
                     </td>
                     <td className="px-3 py-3 text-xs text-[#2F3A4A]/80">
-                      <div className="font-semibold text-[#D85E00]">
-                        {narrative.summary}
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm transition hover:shadow-md animate-[pulse_7s_ease-in-out_infinite]">
+                          <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
+                          <span>{narrative.summary}</span>
+                        </div>
+                        {narrative.strengths.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {narrative.strengths.map((line, index) => (
+                              <span
+                                key={`strength-${item.id}-${index}`}
+                                className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
+                              >
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {narrative.weaknesses.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {narrative.weaknesses.map((line, index) => (
+                              <span
+                                key={`weakness-${item.id}-${index}`}
+                                className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
+                              >
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {narrative.strengths.length > 0 && (
-                        <ul className="mt-1 list-disc ps-5 text-[11px] text-[#16A34A]">
-                          {narrative.strengths.map((line, index) => (
-                            <li key={index}>{line}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {narrative.weaknesses.length > 0 && (
-                        <ul className="mt-1 list-disc ps-5 text-[11px] text-[#D85E00]">
-                          {narrative.weaknesses.map((line, index) => (
-                            <li key={index}>{line}</li>
-                          ))}
-                        </ul>
-                      )}
                     </td>
                     <td className="px-3 py-3">
                       <span
@@ -2467,39 +2535,52 @@ export default function TalentWorkflow() {
                           </span>
                         </div>
                         <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">
-                            {copy.comparison.recommendation}
-                          </div>
-                          <div className="mt-1">{narrative.summary}</div>
+                        <div className="font-semibold text-[#D85E00]">
+                          {copy.comparison.recommendation}
                         </div>
-                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#16A34A]">
-                            {copy.comparison.strengths}
-                          </div>
-                          {narrative.strengths.length ? (
-                            <ul className="mt-1 list-disc ps-4">
-                              {narrative.strengths.map((line, index) => (
-                                <li key={index}>{line}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-[#2F3A4A]/50">—</p>
-                          )}
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm">
+                          <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
+                          <span>{narrative.summary}</span>
                         </div>
-                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">
-                            {copy.comparison.weaknesses}
-                          </div>
-                          {narrative.weaknesses.length ? (
-                            <ul className="mt-1 list-disc ps-4">
-                              {narrative.weaknesses.map((line, index) => (
-                                <li key={index}>{line}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-[#2F3A4A]/50">—</p>
-                          )}
+                      </div>
+                      <div className="mt-3 text-xs text-[#2F3A4A]/70">
+                        <div className="font-semibold text-[#16A34A]">
+                          {copy.comparison.strengths}
                         </div>
+                        {narrative.strengths.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {narrative.strengths.map((line, index) => (
+                              <span
+                                key={`modal-strength-${item.id}-${index}`}
+                                className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
+                              >
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[#2F3A4A]/50">—</p>
+                        )}
+                      </div>
+                      <div className="mt-3 text-xs text-[#2F3A4A]/70">
+                        <div className="font-semibold text-[#D85E00]">
+                          {copy.comparison.weaknesses}
+                        </div>
+                        {narrative.weaknesses.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {narrative.weaknesses.map((line, index) => (
+                              <span
+                                key={`modal-weakness-${item.id}-${index}`}
+                                className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
+                              >
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[#2F3A4A]/50">—</p>
+                        )}
+                      </div>
                         <div className="mt-3 grid gap-2 text-xs text-[#2F3A4A]/70">
                           <div>
                             <span className="font-semibold text-[#D85E00]">
