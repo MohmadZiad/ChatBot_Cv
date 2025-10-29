@@ -20,7 +20,7 @@ async function createPlaceholderAnalysis(
       jobId,
       cvId,
       score: 0,
-      status: reason, // حقل نصي حر إن لم يكن عندك Enum
+      status: "error",
     } as any,
   });
 
