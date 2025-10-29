@@ -1,4 +1,5 @@
 import { http } from "../http";
+import type { Lang } from "@/lib/i18n";
 
 export type ExtractedJobFields = {
   title: string;
@@ -78,74 +79,97 @@ export type RequirementsTemplate = {
   right_column: string[];
 };
 
+type AssistantLang = Lang | undefined;
+
 export const assistantApi = {
-  extractFields(jobDescription: string) {
+  extractFields(jobDescription: string, lang?: AssistantLang) {
     return http.post<ExtractedJobFields>("/assistant/extract-fields", {
       job_description: jobDescription,
+      lang,
     });
   },
-  suggestRequirements(jobDescription: string) {
+  suggestRequirements(jobDescription: string, lang?: AssistantLang) {
     return http.post<SuggestedRequirements>("/assistant/suggest-requirements", {
       job_description: jobDescription,
+      lang,
     });
   },
-  titleSummary(jobDescription: string) {
+  titleSummary(jobDescription: string, lang?: AssistantLang) {
     return http.post<TitleSummary>("/assistant/title-summary", {
       job_description: jobDescription,
+      lang,
     });
   },
-  languages(jobDescription: string) {
+  languages(jobDescription: string, lang?: AssistantLang) {
     return http.post<LanguagesExtract>("/assistant/languages", {
       job_description: jobDescription,
+      lang,
     });
   },
-  experience(jobDescription: string) {
+  experience(jobDescription: string, lang?: AssistantLang) {
     return http.post<ExperienceExtract>("/assistant/experience", {
       job_description: jobDescription,
+      lang,
     });
   },
-  cvQuickCheck(jobDescription: string, cvText: string) {
+  cvQuickCheck(jobDescription: string, cvText: string, lang?: AssistantLang) {
     return http.post<CvQuickCheck>("/assistant/cv-quick-check", {
       job_description: jobDescription,
       cv_text: cvText,
+      lang,
     });
   },
-  dashboard(jobDescription: string, cvs: { name: string; text: string }[]) {
+  dashboard(
+    jobDescription: string,
+    cvs: { name: string; text: string }[],
+    lang?: AssistantLang
+  ) {
     return http.post<DashboardAnalysis>("/assistant/analysis-dashboard", {
       job_description: jobDescription,
       cvs,
+      lang,
     });
   },
-  quickSuggestions(topic: "عنوان" | "وصف" | "متطلبات" | "ملخص", jobDescription: string) {
+  quickSuggestions(topic: string, jobDescription: string, lang?: AssistantLang) {
     return http.post<{ output: string }>("/assistant/quick-suggestions", {
       topic,
       job_description: jobDescription,
+      lang,
     });
   },
-  candidateHelper(candidateProfile: string, jobDescription: string) {
+  candidateHelper(
+    candidateProfile: string,
+    jobDescription: string,
+    lang?: AssistantLang
+  ) {
     return http.post<CandidateHelper>("/assistant/candidate-helper", {
       candidate_profile: candidateProfile,
       job_description: jobDescription,
+      lang,
     });
   },
-  requirementsTemplate(jobDescription: string) {
+  requirementsTemplate(jobDescription: string, lang?: AssistantLang) {
     return http.post<RequirementsTemplate>("/assistant/requirements-template", {
       job_description: jobDescription,
+      lang,
     });
   },
-  titleText(jobDescription: string) {
+  titleText(jobDescription: string, lang?: AssistantLang) {
     return http.post<{ output: string }>("/assistant/title-text", {
       job_description: jobDescription,
+      lang,
     });
   },
-  summaryText(jobDescription: string) {
+  summaryText(jobDescription: string, lang?: AssistantLang) {
     return http.post<{ output: string }>("/assistant/summary-text", {
       job_description: jobDescription,
+      lang,
     });
   },
-  requirementsList(jobDescription: string) {
+  requirementsList(jobDescription: string, lang?: AssistantLang) {
     return http.post<{ output: string }>("/assistant/requirements-list", {
       job_description: jobDescription,
+      lang,
     });
   },
 };

@@ -27,6 +27,7 @@ import {
   analysesApi,
   type Analysis,
   type AnalysisMetrics,
+  type EvidenceItem,
 } from "@/services/api/analyses";
 import { jobsApi, type Job } from "@/services/api/jobs";
 import {
@@ -400,7 +401,7 @@ export default function ResultDetail() {
     setJobFieldsLoading(true);
     setJobFieldsError(null);
     assistantApi
-      .extractFields(job.description)
+      .extractFields(job.description, lang)
       .then((res) => {
         if (!alive) return;
         setJobFields(res);
@@ -416,7 +417,7 @@ export default function ResultDetail() {
     return () => {
       alive = false;
     };
-  }, [job?.id, job?.description]);
+  }, [job?.id, job?.description, lang]);
 
   useEffect(() => {
     if (!job?.description?.trim()) return;
@@ -426,7 +427,7 @@ export default function ResultDetail() {
     setAiLanguagesLoading(true);
     setAiLanguagesError(null);
     assistantApi
-      .languages(job.description)
+      .languages(job.description, lang)
       .then((res) => {
         if (!alive) return;
         setAiLanguages(Array.isArray(res.languages) ? res.languages : []);
@@ -442,7 +443,12 @@ export default function ResultDetail() {
     return () => {
       alive = false;
     };
-  }, [job?.description, jobFields?.languages?.length, jobFieldsLoading]);
+  }, [
+    job?.description,
+    jobFields?.languages?.length,
+    jobFieldsLoading,
+    lang,
+  ]);
 
   useEffect(() => {
     if (!job?.description?.trim()) return;
@@ -452,7 +458,7 @@ export default function ResultDetail() {
     setAiExperienceLoading(true);
     setAiExperienceError(null);
     assistantApi
-      .experience(job.description)
+      .experience(job.description, lang)
       .then((res) => {
         if (!alive) return;
         setAiExperience(res);
@@ -474,6 +480,7 @@ export default function ResultDetail() {
     job?.description,
     jobFields?.required_experience_years,
     jobFieldsLoading,
+    lang,
   ]);
 
   useEffect(() => {
@@ -509,7 +516,11 @@ export default function ResultDetail() {
     setQuickLoading(true);
     setQuickError(null);
     try {
-      const res = await assistantApi.quickSuggestions("ملخص", job.description);
+      const res = await assistantApi.quickSuggestions(
+        lang === "ar" ? "ملخص" : "summary",
+        job.description,
+        lang
+      );
       setQuickSummary(parseBulletLines(res.output));
     } catch (err: unknown) {
       setQuickError(getErrorMessage(err, "failed to generate"));
@@ -517,7 +528,7 @@ export default function ResultDetail() {
     } finally {
       setQuickLoading(false);
     }
-  }, [job?.description]);
+  }, [job?.description, lang, parseBulletLines]);
 
   const handleQuickCopy = useCallback(() => {
     if (!quickSummary.length) return;
@@ -599,7 +610,35 @@ export default function ResultDetail() {
     : (gaps?.improve ?? []);
   const strengths = metrics?.topStrengths ?? [];
   const risks = metrics?.riskFlags ?? [];
-  const evidence = data.evidence?.slice(0, 4) ?? [];
+  const evidenceAll: EvidenceItem[] = data.evidence ?? [];
+  const evidencePreview = evidenceAll.slice(0, 4);
+  const evidenceByRequirement = useMemo(() => {
+    if (!evidenceAll.length) return new Map<string, EvidenceItem>();
+    const map = new Map<string, EvidenceItem>();
+    evidenceAll.forEach((item) => {
+      const key = item.requirement.trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) map.set(key, item);
+    });
+    return map;
+  }, [evidenceAll]);
+  const getRequirementExcerpt = useCallback(
+    (entry: PerRequirement): string | null => {
+      const chunkText = entry.bestChunk?.excerpt?.trim();
+      if (chunkText) return chunkText;
+      const normalized = entry.requirement.trim().toLowerCase();
+      if (!normalized) return null;
+      const direct = evidenceByRequirement.get(normalized);
+      if (direct?.chunk.excerpt?.trim()) return direct.chunk.excerpt.trim();
+      const fuzzy = evidenceAll.find((item) => {
+        const req = item.requirement.trim().toLowerCase();
+        if (!req) return false;
+        return req.includes(normalized) || normalized.includes(req);
+      });
+      return fuzzy?.chunk.excerpt?.trim() || null;
+    },
+    [evidenceAll, evidenceByRequirement]
+  );
   const generatedAt = formatDate(metrics?.generatedAt ?? data.updatedAt, lang);
   const scoreRaw = data.score ?? metrics?.weightedScore ?? 0;
   const scoreValue = toScore10(scoreRaw);
@@ -929,7 +968,9 @@ export default function ResultDetail() {
             </div>
             <div className="space-y-3">
               {data.breakdown?.length ? (
-                data.breakdown.map((item, idx) => (
+                data.breakdown.map((item, idx) => {
+                  const excerpt = getRequirementExcerpt(item);
+                  return (
                   <motion.div
                     key={`${item.requirement}-${idx}`}
                     variants={bubbleVariants}
@@ -946,9 +987,9 @@ export default function ResultDetail() {
                         <div className="text-sm font-semibold text-[#2F3A4A] dark:text-white">
                           {item.requirement}
                         </div>
-                        {item.bestChunk?.excerpt ? (
+                        {excerpt ? (
                           <div className="text-xs text-[#2F3A4A]/60 dark:text-white/60">
-                            “{clampText(item.bestChunk.excerpt, 180)}”
+                            “{clampText(excerpt, 180)}”
                           </div>
                         ) : null}
                       </div>
@@ -964,7 +1005,8 @@ export default function ResultDetail() {
                       </div>
                     </div>
                   </motion.div>
-                ))
+                );
+              })
               ) : (
                 <div className="rounded-2xl border border-dashed border-[#FFD7B3] bg-white/60 p-6 text-center text-xs text-[#2F3A4A]/60 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
                   {tt("analysisPage.noBreakdown")}
@@ -1078,14 +1120,14 @@ export default function ResultDetail() {
             </div>
           ) : null}
 
-          {evidence.length ? (
+          {evidencePreview.length ? (
             <div className="rounded-3xl border border-[#FFD7B3]/70 bg-white/85 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center gap-2 text-sm font-semibold text-[#2F3A4A] dark:text-white">
                 <Sparkles className="h-4 w-4 text-[#FF7A00]" />{" "}
                 {tt("analysisPage.evidence")}
               </div>
               <ul className="mt-3 space-y-2 text-xs text-[#2F3A4A]/70 dark:text-white/70">
-                {evidence.map((item, idx) => (
+                {evidencePreview.map((item, idx) => (
                   <li
                     key={`${item.chunk.id}-${idx}`}
                     className="rounded-2xl bg-[#FFF2E8] px-3 py-2 text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]"
