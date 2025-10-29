@@ -5,6 +5,7 @@ import type { Analysis as PrismaAnalysis } from "@prisma/client";
 import { embedTexts, chatJson } from "./openai.js";
 import { cosine } from "./vector.js";
 import { ensureCvChunks, ensureCvEmbeddings } from "./embeddings.js";
+import { suggestRequirementsFromDescription } from "./requirements.js";
 
 type HttpError = Error & { status?: number; code?: string };
 const httpError = (
@@ -97,10 +98,32 @@ export async function runAnalysis(jobId: string, cvId: string) {
   }
 
   // متطلبات الوظيفة
-  const reqs = await prisma.jobRequirement.findMany({
+  let reqs = await prisma.jobRequirement.findMany({
     where: { jobId },
     orderBy: { id: "asc" },
   });
+  if (!reqs.length) {
+    const job = await prisma.job.findUnique({ where: { id: jobId } });
+    const generated = await suggestRequirementsFromDescription(
+      job?.description ?? ""
+    );
+    if (generated.length) {
+      await prisma.jobRequirement.createMany({
+        data: generated.map((item) => ({
+          jobId,
+          requirement: item.requirement.slice(0, 240),
+          mustHave: Boolean(item.mustHave),
+          weight: new Prisma.Decimal(
+            Math.min(3, Math.max(1, Number(item.weight ?? 1) || 1))
+          ),
+        })),
+      });
+      reqs = await prisma.jobRequirement.findMany({
+        where: { jobId },
+        orderBy: { id: "asc" },
+      });
+    }
+  }
   if (!reqs.length)
     throw httpError("الوظيفة بلا متطلبات.", 422, "NO_JOB_REQUIREMENTS");
 
