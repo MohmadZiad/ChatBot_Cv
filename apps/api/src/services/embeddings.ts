@@ -67,11 +67,10 @@ export async function ensureCvEmbeddings(cvId: string) {
       const raw = vecs[k];
       const vector = normalizeVector(raw);
 
-      if (!isValidVector(vector)) continue;
+      if (!vector.length || (DIM && vector.length !== DIM)) continue;
 
       await prisma.$executeRawUnsafe(
-        `UPDATE "CVChunk" SET "embedding" = $1::vector, "hasEmbedding" = true WHERE id = $2`,
-        toVectorLiteral(vector),
+        `UPDATE "CVChunk" SET "embedding" = ${toVectorSQL(vector)} WHERE id = $1`,
         id
       );
 
@@ -116,4 +115,20 @@ function formatComponent(value: number) {
   if (abs >= 1) return value.toFixed(6).replace(/0+$/g, "").replace(/\.$/, "");
   if (abs >= 1e-3) return value.toPrecision(8).replace(/0+$/g, "").replace(/\.$/, "");
   return value.toExponential(6);
+}
+
+function normalizeVector(value: unknown): number[] {
+  if (Array.isArray(value)) return value.map((num) => Number(num) || 0);
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { length?: number }).length === "number"
+  ) {
+    try {
+      return Array.from(value as ArrayLike<number>, (num) => Number(num) || 0);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
