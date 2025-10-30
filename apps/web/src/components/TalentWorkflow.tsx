@@ -15,6 +15,9 @@ import {
   FileOutput,
   FileText,
   Filter,
+  Github,
+  Link2,
+  Linkedin,
   Loader2,
   Sparkles,
   Pin,
@@ -269,7 +272,22 @@ const COPY = {
       mustGate: "استبعاد غير المستوفين للـMust-have",
       exp24: "خبرة 2-4 سنوات",
       react: "يتقن React",
+      highNice: "مهارات إضافية فوق 55%",
       recommended: "موصى به فقط",
+      languageLabel: "اللغة",
+      languageAny: "كل اللغات",
+      languageArabic: "العربية",
+      languageEnglish: "الإنجليزية",
+      languageBilingual: "ثنائي اللغة",
+      statusLabel: "الحالة",
+      statusAny: "الكل",
+      statusRecommended: "موصى به",
+      statusConsider: "قابل للمقابلة",
+      statusExcluded: "مستبعد",
+      scoreLabel: "درجة مطابقة",
+      scoreAny: "بدون حد",
+      score70: "70%+",
+      score80: "80%+",
     },
     insights: {
       summary: {
@@ -278,7 +296,14 @@ const COPY = {
         excluded: "تم استبعاده بدرجة {score}%.",
         duplicate: "مكرر لنفس المتقدم ({name}).",
       },
-      gateFail: "لم يحقق 80% من مهارات الـMust-have.",
+      summaryDetails: {
+        must: "تغطية الـMust-have {value}.",
+        nice: "المهارات الإضافية {value}.",
+        languages: "اللغات: {value}.",
+        experience: "الخبرة: {value}.",
+        quality: "جودة السيرة: {value}.",
+      },
+      gateFail: "لم يحقق 60% من مهارات الـMust-have.",
       strengths: {
         must: "حقق {value}% من متطلبات الـMust-have.",
         nice: "أظهر {value}% من مهارات Nice-to-have.",
@@ -426,7 +451,22 @@ const COPY = {
       mustGate: "Hide must-have failures",
       exp24: "Experience 2-4 years",
       react: "Strong in React",
+      highNice: "55%+ nice-to-have",
       recommended: "Recommended only",
+      languageLabel: "Language",
+      languageAny: "Any",
+      languageArabic: "Arabic",
+      languageEnglish: "English",
+      languageBilingual: "Bilingual",
+      statusLabel: "Status",
+      statusAny: "Any",
+      statusRecommended: "Recommended",
+      statusConsider: "Interview",
+      statusExcluded: "Excluded",
+      scoreLabel: "Match floor",
+      scoreAny: "No minimum",
+      score70: "70%+",
+      score80: "80%+",
     },
     insights: {
       summary: {
@@ -435,7 +475,14 @@ const COPY = {
         excluded: "Excluded with a {score}% score.",
         duplicate: "Duplicate of {name}.",
       },
-      gateFail: "Did not reach 80% of must-have skills.",
+      summaryDetails: {
+        must: "Must-have coverage {value}.",
+        nice: "Nice-to-have coverage {value}.",
+        languages: "Languages: {value}.",
+        experience: "Experience: {value}.",
+        quality: "CV quality: {value}.",
+      },
+      gateFail: "Did not reach 60% of must-have skills.",
       strengths: {
         must: "Matched {value}% of must-have skills.",
         nice: "Matched {value}% of nice-to-have skills.",
@@ -508,6 +555,20 @@ function formatPercent(value: number): string {
     : rounded.toFixed(1);
 }
 
+function formatExperienceYears(value: number, lang: Lang): string {
+  const rounded = Number(value.toFixed(1));
+  const display = Number.isInteger(rounded)
+    ? String(Math.round(rounded))
+    : rounded.toFixed(1);
+  if (lang === "ar") {
+    if (display === "0") return "0 سنة";
+    if (display === "1") return "سنة واحدة";
+    if (display === "2") return "سنتان";
+    return `${display} سنوات`;
+  }
+  return `${display} yrs`;
+}
+
 function formatBytes(size: number): string {
   if (!size) return "0";
   const units = ["B", "KB", "MB", "GB"];
@@ -538,6 +599,38 @@ function fmt(
     out = out.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
   }
   return out;
+}
+function hostLabelFromUrl(url: string, fallback: string): string {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./i, "");
+    if (!hostname) return fallback;
+    return hostname;
+  } catch {
+    const cleaned = url.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+    return cleaned || fallback;
+  }
+}
+function formatLinkBadgeLabel(
+  url: string,
+  platform?: "github" | "linkedin"
+): string {
+  if (platform === "github" || platform === "linkedin") {
+    const prefix = platform === "github" ? "GitHub" : "LinkedIn";
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/$/, "").split("/").filter(Boolean);
+      if (path.length) {
+        return `${prefix} • ${path[0]}`;
+      }
+    } catch {
+      const fallback = url.replace(/^https?:\/\//i, "");
+      const parts = fallback.split(/[/?#]/).filter(Boolean);
+      if (parts.length > 1) return `${prefix} • ${parts[1]}`;
+    }
+    return prefix;
+  }
+  return hostLabelFromUrl(url, "Link");
 }
 
 function detectLanguages(text: string): string[] {
@@ -596,7 +689,10 @@ function parseCandidateMeta(
   const projectLinks = linkMatches
     .filter((url) => !github.includes(url) && !linkedin.includes(url))
     .slice(0, 5)
-    .map((url, idx) => ({ label: `Link ${idx + 1}`, url }));
+    .map((url, idx) => ({
+      label: hostLabelFromUrl(url, `Link ${idx + 1}`),
+      url,
+    }));
 
   const detectedLanguages = detectLanguages(safeText);
   if (cvLang) {
@@ -732,7 +828,7 @@ function computeScores(
       100
     : 0;
 
-  const gatePassed = must.length === 0 || mustPercent >= 80;
+  const gatePassed = must.length === 0 || mustPercent >= 60;
 
   const exp = computeExperienceScore(
     meta.yearsExperience,
@@ -798,6 +894,45 @@ function buildAiNarrative(
 
   if (ai?.summary) {
     summary = ai.summary;
+  }
+
+  const detailTemplates = texts.summaryDetails;
+  const detailParts: string[] = [];
+  if (detailTemplates) {
+    detailParts.push(
+      fmt(detailTemplates.must, { value: `${formatPercent(scores.mustPercent)}%` })
+    );
+    if (scores.nicePercent > 0) {
+      detailParts.push(
+        fmt(detailTemplates.nice, { value: `${formatPercent(scores.nicePercent)}%` })
+      );
+    }
+    if (meta.languages.length) {
+      const langs = formatList(meta.languages, lang) || meta.languages.join(
+        lang === "ar" ? "، " : ", "
+      );
+      detailParts.push(fmt(detailTemplates.languages, { value: langs }));
+    }
+    if (typeof meta.yearsExperience === "number" && meta.yearsExperience >= 0) {
+      detailParts.push(
+        fmt(detailTemplates.experience, {
+          value: formatExperienceYears(meta.yearsExperience, lang),
+        })
+      );
+    }
+    if (scores.qualityScore > 0) {
+      detailParts.push(
+        fmt(detailTemplates.quality, {
+          value: `${formatPercent(scores.qualityScore)}%`,
+        })
+      );
+    }
+  }
+
+  if (detailParts.length) {
+    const separator = lang === "ar" ? " • " : " • ";
+    const detailText = detailParts.join(separator);
+    summary = summary ? `${summary}${separator}${detailText}` : detailText;
   }
 
   if (!scores.gatePassed) {
@@ -955,6 +1090,9 @@ export default function TalentWorkflow() {
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pinnedId, setPinnedId] = React.useState<string | null>(null);
   const [activeFilters, setActiveFilters] = React.useState<string[]>([]);
+  const [languageFilter, setLanguageFilter] = React.useState<string>("all");
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [scoreFilter, setScoreFilter] = React.useState<string>("any");
   const [sortState, setSortState] = React.useState<{
     key: SortKey;
     direction: "asc" | "desc";
@@ -1716,6 +1854,7 @@ export default function TalentWorkflow() {
       { id: "mustGate", label: copy.filters.mustGate },
       { id: "exp24", label: copy.filters.exp24 },
       { id: "react", label: copy.filters.react },
+      { id: "highNice", label: copy.filters.highNice },
       { id: "recommended", label: copy.filters.recommended },
     ],
     [copy.filters]
@@ -1729,6 +1868,8 @@ export default function TalentWorkflow() {
         activeFilters.includes("recommended") &&
         item.scores.status !== "recommended"
       )
+        return false;
+      if (activeFilters.includes("highNice") && item.scores.nicePercent < 55)
         return false;
       if (activeFilters.includes("exp24")) {
         if (
@@ -1745,9 +1886,28 @@ export default function TalentWorkflow() {
         );
         if (!hasReact) return false;
       }
+      if (languageFilter !== "all") {
+        const languages = item.meta.languages.map((l) => l.toLowerCase());
+        if (languageFilter === "ar" && !languages.some((l) => /arabic|العربية/.test(l)))
+          return false;
+        if (languageFilter === "en" && !languages.some((l) => /english|الإنجليزية/.test(l)))
+          return false;
+        if (languageFilter === "bilingual" && item.meta.languages.length < 2)
+          return false;
+      }
+      if (statusFilter !== "all" && item.scores.status !== statusFilter)
+        return false;
+      if (scoreFilter === "70" && item.scores.finalScore < 70) return false;
+      if (scoreFilter === "80" && item.scores.finalScore < 80) return false;
       return true;
     });
-  }, [results, activeFilters]);
+  }, [
+    results,
+    activeFilters,
+    languageFilter,
+    statusFilter,
+    scoreFilter,
+  ]);
 
   const sortedResults = React.useMemo(() => {
     const sorted = [...filteredResults].sort((a, b) => {
@@ -2280,30 +2440,79 @@ export default function TalentWorkflow() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Filter className="h-4 w-4 text-[#FF7A00]" />
-          <span className="text-xs font-semibold text-[#2F3A4A]/70">
-            {copy.table.filtersTitle}
-          </span>
-          <div className="flex flex-wrap gap-2 text-xs">
-            {quickFilters.map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => toggleFilter(filter.id)}
-                className={clsx(
-                  "rounded-full border px-3 py-1 font-semibold transition",
-                  activeFilters.includes(filter.id)
-                    ? "border-transparent bg-[#FF7A00] text-white"
-                    : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          {selected.length > 0 && (
-            <span className="text-xs text-[#2F3A4A]/60">
-              {copy.table.selectedCount.replace(
-                "{count}",
-                String(selected.length)
+        <span className="text-xs font-semibold text-[#2F3A4A]/70">
+          {copy.table.filtersTitle}
+        </span>
+        <div className="flex flex-wrap gap-2 text-xs">
+          {quickFilters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => toggleFilter(filter.id)}
+              className={clsx(
+                "rounded-full border px-3 py-1 font-semibold transition",
+                activeFilters.includes(filter.id)
+                  ? "border-transparent bg-[#FF7A00] text-white"
+                  : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
+              )}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-[#2F3A4A]/80">
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.languageLabel}
+            </span>
+            <select
+              value={languageFilter}
+              onChange={(event) => setLanguageFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="all">{copy.filters.languageAny}</option>
+              <option value="ar">{copy.filters.languageArabic}</option>
+              <option value="en">{copy.filters.languageEnglish}</option>
+              <option value="bilingual">{copy.filters.languageBilingual}</option>
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.statusLabel}
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="all">{copy.filters.statusAny}</option>
+              <option value="recommended">{copy.filters.statusRecommended}</option>
+              <option value="consider">{copy.filters.statusConsider}</option>
+              <option value="excluded">{copy.filters.statusExcluded}</option>
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.scoreLabel}
+            </span>
+            <select
+              value={scoreFilter}
+              onChange={(event) => setScoreFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="any">{copy.filters.scoreAny}</option>
+              <option value="70">{copy.filters.score70}</option>
+              <option value="80">{copy.filters.score80}</option>
+            </select>
+          </label>
+        </div>
+        {selected.length > 0 && (
+          <span className="text-xs text-[#2F3A4A]/60">
+            {copy.table.selectedCount.replace(
+              "{count}",
+              String(selected.length)
               )}
             </span>
           )}
@@ -2449,6 +2658,38 @@ export default function TalentWorkflow() {
                   { experienceBand },
                   duplicateMap.get(item.id)
                 );
+                const linkBadges: {
+                  key: string;
+                  label: string;
+                  url: string;
+                  type: "github" | "linkedin" | "project";
+                }[] = [];
+                item.meta.github.forEach((url, index) => {
+                  linkBadges.push({
+                    key: `github-${item.id}-${index}`,
+                    label: formatLinkBadgeLabel(url, "github"),
+                    url,
+                    type: "github",
+                  });
+                });
+                item.meta.linkedin.forEach((url, index) => {
+                  linkBadges.push({
+                    key: `linkedin-${item.id}-${index}`,
+                    label: formatLinkBadgeLabel(url, "linkedin"),
+                    url,
+                    type: "linkedin",
+                  });
+                });
+                item.meta.projects
+                  .filter((project) => project?.url)
+                  .forEach((project, index) => {
+                    linkBadges.push({
+                      key: `project-${item.id}-${index}`,
+                      label: project.label || hostLabelFromUrl(project.url!, "Link"),
+                      url: project.url!,
+                      type: "project",
+                    });
+                  });
                 return (
                   <tr key={item.id} className="bg-white/60">
                     <td className="px-3 py-3">
@@ -2495,7 +2736,7 @@ export default function TalentWorkflow() {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="rounded-full bg-[#FFB26B]/20 px-2 py-1 text-center text-xs font-semibold text-[#D85E00]">
+                      <div className="rounded-full border border-[#F3C969]/40 bg-[#FDF3C4]/80 px-2 py-1 text-center text-xs font-semibold text-[#8B5E00]">
                         {formatPercent(item.scores.nicePercent)}%
                       </div>
                     </td>
@@ -2539,6 +2780,28 @@ export default function TalentWorkflow() {
                               >
                                 {line}
                               </span>
+                            ))}
+                          </div>
+                        )}
+                        {linkBadges.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {linkBadges.map((badge) => (
+                              <a
+                                key={badge.key}
+                                href={badge.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-full border border-[#FF7A00]/30 bg-white/80 px-3 py-1 text-[10px] font-semibold text-[#B34A00] transition hover:border-[#FF7A00] hover:text-[#D85E00]"
+                              >
+                                {badge.type === "github" ? (
+                                  <Github className="h-3.5 w-3.5" />
+                                ) : badge.type === "linkedin" ? (
+                                  <Linkedin className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Link2 className="h-3.5 w-3.5" />
+                                )}
+                                <span>{badge.label}</span>
+                              </a>
                             ))}
                           </div>
                         )}
