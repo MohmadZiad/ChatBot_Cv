@@ -45,20 +45,66 @@ function keywordRatio(tokens: string[], text: string): number {
   if (!tokens.length) return 0;
   const normalized = normalizeForKeywords(text);
   if (!normalized) return 0;
-  const compact = normalized.replace(/[.\-_/\s]+/g, "");
+  const textTokens = normalized.split(" ").filter(Boolean);
+  const textSet = new Set(textTokens);
+  const compactSource = normalized.replace(/[.\-_/\s]+/g, "");
+
   let hits = 0;
   for (const token of tokens) {
     if (!token) continue;
-    if (normalized.includes(token) || compact.includes(token)) hits++;
+    if (textSet.has(token)) {
+      hits++;
+      continue;
+    }
+
+    const compactToken = token.replace(/[.\-_/\s]+/g, "");
+    if (compactToken && compactSource.includes(compactToken)) {
+      hits++;
+      continue;
+    }
+
+    for (const word of textTokens) {
+      const minLen = Math.min(word.length, token.length);
+      if (minLen < 4) continue;
+      const common = longestCommonSubsequenceLen(word, token);
+      if (common / minLen >= 0.7) {
+        hits++;
+        break;
+      }
+    }
   }
   return hits / tokens.length;
 }
+function longestCommonSubsequenceLen(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
 function gapsFrom(perReq: any[]) {
   const missing = perReq
-    .filter((r: any) => r.mustHave && r.similarity < 0.35)
+    .filter(
+      (r: any) =>
+        r.mustHave &&
+        r.similarity < 0.32 &&
+        Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) <= 6
+    )
     .map((r: any) => r.requirement);
   const improve = perReq
-    .filter((r: any) => r.similarity >= 0.2 && (r.score10 ?? 0) < 7)
+    .filter(
+      (r: any) =>
+        r.similarity >= 0.25 &&
+        r.similarity < 0.8 &&
+        Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) < 8
+    )
     .map((r: any) => r.requirement);
   return { mustHaveMissing: missing, improve };
 }
@@ -163,8 +209,8 @@ export async function runAnalysis(jobId: string, cvId: string) {
       let boostedIdx = best.idx;
       for (let j = 0; j < chunks.length; j++) {
         const ratio = keywordRatio(keywordTokens, chunks[j].content || "");
-        if (ratio >= 0.55) {
-          const candidate = Math.min(0.98, 0.55 + ratio * 0.45);
+        if (ratio >= 0.4) {
+          const candidate = Math.min(0.98, 0.6 + ratio * 0.4);
           if (candidate > boostedScore) {
             boostedScore = candidate;
             boostedIdx = j;
