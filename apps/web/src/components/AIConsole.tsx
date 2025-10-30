@@ -280,7 +280,7 @@ function computeMetricsFromResult(
     }));
 
   const weightedScore = Number(result.score ?? 0);
-  const gatePassed = must.length === 0 || percent(must) >= 80;
+  const gatePassed = must.length === 0 || percent(must) >= 60;
 
   const riskFlags: string[] = [];
   if (!gatePassed) riskFlags.push("must_threshold");
@@ -1474,9 +1474,9 @@ export default function AIConsole() {
                             </div>
                             {assistantLanguagesList.length ? (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {assistantLanguagesList.map((item) => (
+                                {assistantLanguagesList.map((item, idx) => (
                                   <span
-                                    key={item}
+                                    key={`${item}-${idx}`}
                                     className="rounded-full bg-[var(--color-primary)]/10 px-3 py-1 text-[11px] font-semibold text-[var(--color-primary)]"
                                   >
                                     {item}
