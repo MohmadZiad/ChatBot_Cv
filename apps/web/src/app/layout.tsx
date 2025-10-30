@@ -1,23 +1,9 @@
 // apps/web/src/app/layout.tsx
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Topbar from "@/components/ui/Topbar";
 import Chatbot from "@/components/Chatbot";
 import SplashScreen from "@/components/ui/SplashScreen";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_APP_NAME || "CV Matcher",
@@ -51,7 +37,7 @@ export default function RootLayout({
 
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh text-foreground`}
+        className="antialiased min-h-dvh text-foreground"
       >
         <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
           <div className="absolute -top-32 -end-32 h-[420px] w-[420px] rounded-full bg-[#FFB26B]/40 blur-3xl" />
