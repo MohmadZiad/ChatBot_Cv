@@ -65,4 +65,3 @@ Deploy the API first, then provide its public URL to the frontend via `NEXT_PUBL
 - **Environment variables**:
   - Always provide `DATABASE_URL` on Render. If `DIRECT_URL` is omitted it will automatically fall back to `DATABASE_URL` for Prisma commands.
   - Expose the API URL to the frontend via `NEXT_PUBLIC_API_BASE_URL` (for example `https://your-service.onrender.com`). Without it the browser will try to reach `http://localhost:4000` and calls will fail in production.
-  - Configure CORS by setting `CORS_ORIGINS` (or `WEB_ORIGIN`) to a comma-separated list when you need to lock it down. Localhost origins (e.g. `http://localhost:3000`) are allowed by default for easier testing; set `ALLOW_LOCAL_ORIGINS=false` to opt out.
