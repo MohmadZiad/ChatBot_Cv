@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node scripts/run-prisma-prestart.cjs && node dist/index.js",
     "prestart": "node ./scripts/run-prisma-prestart.cjs",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate",
