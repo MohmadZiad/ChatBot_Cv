@@ -210,8 +210,6 @@ export default function Chatbot() {
   const [savingJob, setSavingJob] = useState(false);
   const [copied, setCopied] = useState(false);
   const [typing, setTyping] = useState(false);
-  type ToastTone = "success" | "error" | "info";
-  type ToastMessage = { id: string; text: string; tone: ToastTone };
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef<Record<string, number>>({});
 
@@ -1229,9 +1227,9 @@ export default function Chatbot() {
                                       <span className="font-semibold text-[var(--color-primary)]">
                                         {tt("chat.missingMust")}
                                       </span>
-                                      {missingMust.map((item) => (
+                                      {missingMust.map((item, idx) => (
                                         <span
-                                          key={`miss-${item}`}
+                                          key={`miss-${item}-${idx}`}
                                           className="rounded-full bg-[#fee4e2] px-3 py-1 text-[#b42318]"
                                         >
                                           {item}
@@ -1244,9 +1242,9 @@ export default function Chatbot() {
                                       <span className="font-semibold text-[#d4850d]">
                                         {tt("chat.improvements")}
                                       </span>
-                                      {improvement.map((item) => (
+                                      {improvement.map((item, idx) => (
                                         <span
-                                          key={`imp-${item}`}
+                                          key={`imp-${item}-${idx}`}
                                           className="rounded-full bg-[#fef0c7] px-3 py-1 text-[#b54708]"
                                         >
                                           {item}
@@ -1259,11 +1257,11 @@ export default function Chatbot() {
                                       <span className="font-semibold text-[#b42318]">
                                         {tt("chat.risks")}
                                       </span>
-                                      {risks.map((flag) => {
+                                      {risks.map((flag, idx) => {
                                         const label = getRiskLabel(flag, lang);
                                         return (
                                           <span
-                                            key={`risk-${flag}`}
+                                            key={`risk-${flag}-${idx}`}
                                             className="inline-flex items-center gap-1 rounded-full bg-[#fde2e1] px-3 py-1 text-[#b42318]"
                                           >
                                             <AlertTriangle className="h-3.5 w-3.5" />
@@ -1301,9 +1299,9 @@ export default function Chatbot() {
                                   {tt("chat.strengths")}
                                 </div>
                                 <div className="flex flex-wrap gap-2 text-xs">
-                                  {strengths.map((item) => (
+                                  {strengths.map((item, idx) => (
                                     <div
-                                      key={`${item.requirement}-${item.score}`}
+                                      key={`${item.requirement}-${item.score}-${idx}`}
                                       className="rounded-full border border-[var(--color-secondary)]/40 bg-[var(--surface-soft)] px-3 py-1"
                                     >
                                       {item.requirement} •{" "}
@@ -1552,9 +1550,9 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
               {lang === "ar" ? "متطلبات مفقودة" : "Missing must-haves"}
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
-              {summary.missingMust.map((item) => (
+              {summary.missingMust.map((item, idx) => (
                 <span
-                  key={`miss-${item}`}
+                  key={`miss-${item}-${idx}`}
                   className="rounded-full bg-white/15 px-3 py-1 text-white"
                 >
                   {item}
@@ -1585,9 +1583,9 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
               {lang === "ar" ? "نقاط قوة" : "Top strengths"}
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-white/85">
-              {summary.strengths.slice(0, 4).map((item) => (
+              {summary.strengths.slice(0, 4).map((item, idx) => (
                 <span
-                  key={`${item.requirement}-${item.score}`}
+                  key={`${item.requirement}-${item.score}-${idx}`}
                   className="rounded-full bg-white/15 px-3 py-1"
                 >
                   {item.requirement} • {item.score.toFixed(1)}
@@ -1624,11 +1622,11 @@ function AnalysisCard({ analysis, job, lang }: AnalysisCardProps) {
 
         {summary.risks.length ? (
           <div className="flex flex-wrap gap-2 text-xs">
-            {summary.risks.map((flag) => {
+            {summary.risks.map((flag, idx) => {
               const label = getRiskLabel(flag, lang);
               return (
                 <span
-                  key={`risk-${flag}`}
+                  key={`risk-${flag}-${idx}`}
                   className="inline-flex items-center gap-1 rounded-full bg-black/30 px-3 py-1"
                 >
                   <AlertTriangle className="h-3 w-3" />
