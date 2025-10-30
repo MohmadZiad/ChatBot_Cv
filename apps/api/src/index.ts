@@ -13,13 +13,13 @@ await app.register(cors, {
   credentials: true,
 });
 
-// تمكين الرفع (20MB)
+// تمكين رفع الملفات (20MB)
 await app.register(multipart, {
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
   attachFieldsToBody: false,
 });
 
-// سجّل جميع الراوترات (تأكد أن index.js يركّب cvRoute تحت /api/cv)
+// تسجيل جميع الراوترات
 registerRoutes(app);
 
 // Error handler موحّد
@@ -30,6 +30,7 @@ app.setErrorHandler((err, req, reply) => {
   reply.status(status).send({ ok: false, code, message: err.message });
 });
 
+// إعداد المنفذ والمضيف
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST || "0.0.0.0";
 
