@@ -23,6 +23,8 @@ import {
   Trophy,
   Wand2,
 } from "lucide-react";
+// أعلى الملف
+import type { JSX } from "react";
 
 import ScoreGauge from "@/components/ui/ScoreGauge";
 import {
