@@ -763,9 +763,9 @@ export default function ResultDetail() {
               </div>
               <div className="mt-2 flex flex-wrap gap-1 text-xs text-[#B54708] dark:text-[#FFB26B]">
                 {(jobFields?.must_have?.length ?? 0) > 0 ? (
-                  (jobFields?.must_have ?? []).slice(0, 6).map((item) => (
+                  (jobFields?.must_have ?? []).slice(0, 6).map((item, idx) => (
                     <span
-                      key={item}
+                      key={`${item}-${idx}`}
                       className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold shadow-sm dark:bg-white/10"
                     >
                       {item}
@@ -785,9 +785,9 @@ export default function ResultDetail() {
               </div>
               <div className="mt-2 flex flex-wrap gap-1 text-xs text-[#B54708] dark:text-[#FFB26B]">
                 {(jobFields?.nice_to_have?.length ?? 0) > 0 ? (
-                  (jobFields?.nice_to_have ?? []).slice(0, 6).map((item) => (
+                  (jobFields?.nice_to_have ?? []).slice(0, 6).map((item, idx) => (
                     <span
-                      key={item}
+                      key={`${item}-${idx}`}
                       className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold shadow-sm dark:bg-white/10"
                     >
                       {item}

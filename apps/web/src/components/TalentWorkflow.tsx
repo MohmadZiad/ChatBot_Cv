@@ -1542,6 +1542,14 @@ export default function TalentWorkflow() {
     pushBanner,
   ]);
 
+  const removeTemplate = React.useCallback((id: string) => {
+    setTemplates((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      window.localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const applyTemplate = React.useCallback((template: JobTemplate) => {
     setJobTitle(template.title);
     setJobDescription(template.description);
@@ -2463,13 +2471,28 @@ export default function TalentWorkflow() {
           ) : (
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               {templates.map((template) => (
-                <button
+                <div
                   key={template.id}
-                  onClick={() => applyTemplate(template)}
-                  className="rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1 font-semibold text-[#D85E00] hover:bg-[#FF7A00]/10"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#FF7A00]/30 bg-white ps-3 pe-1 py-1 text-[#D85E00]"
                 >
-                  {template.title}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => applyTemplate(template)}
+                    className="font-semibold transition hover:text-[#FF7A00]"
+                  >
+                    {template.title}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeTemplate(template.id)}
+                    aria-label={
+                      lang === "ar" ? "حذف القالب" : "Remove template"
+                    }
+                    className="inline-flex size-5 items-center justify-center rounded-full text-[#D85E00]/70 transition hover:bg-[#FF7A00]/10 hover:text-[#D85E00]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
