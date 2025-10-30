@@ -2865,7 +2865,38 @@ export default function TalentWorkflow() {
                   { experienceBand },
                   duplicateMap.get(item.id)
                 );
-                const linkBadges = extractLinkBadges(item.meta);
+                const linkBadges: {
+                  key: string;
+                  label: string;
+                  url: string;
+                  type: "github" | "linkedin" | "project";
+                }[] = [];
+                item.meta.github.forEach((url, index) => {
+                  linkBadges.push({
+                    key: `github-${item.id}-${index}`,
+                    label: formatLinkBadgeLabel(url, "github"),
+                    url,
+                    type: "github",
+                  });
+                });
+                item.meta.linkedin.forEach((url, index) => {
+                  linkBadges.push({
+                    key: `linkedin-${item.id}-${index}`,
+                    label: formatLinkBadgeLabel(url, "linkedin"),
+                    url,
+                    type: "linkedin",
+                  });
+                });
+                item.meta.projects
+                  .filter((project) => project?.url)
+                  .forEach((project, index) => {
+                    linkBadges.push({
+                      key: `project-${item.id}-${index}`,
+                      label: project.label || hostLabelFromUrl(project.url!, "Link"),
+                      url: project.url!,
+                      type: "project",
+                    });
+                  });
                 return (
                   <tr key={item.id} className="bg-white/60">
                     <td className="px-3 py-3">
@@ -2961,9 +2992,9 @@ export default function TalentWorkflow() {
                         )}
                         {linkBadges.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
-                            {linkBadges.map((badge, index) => (
+                            {linkBadges.map((badge) => (
                               <a
-                                key={`${item.id}-${badge.type}-${index}`}
+                                key={badge.key}
                                 href={badge.url}
                                 target="_blank"
                                 rel="noopener noreferrer"

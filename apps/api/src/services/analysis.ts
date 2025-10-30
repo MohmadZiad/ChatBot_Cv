@@ -89,133 +89,21 @@ function longestCommonSubsequenceLen(a: string, b: string): number {
   }
   return dp[m][n];
 }
-
-const clampScore10 = (value: unknown): number => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  const rounded = Math.round(num);
-  if (rounded < 0) return 0;
-  if (rounded > 10) return 10;
-  return rounded;
-};
-
-type SemanticVerdict = "strong" | "partial" | "weak" | "missing";
-
-async function refineRequirementScoresWithAI(perReq: any[]) {
-  const payloadItems = perReq.map((item: any, idx: number) => {
-    const excerpt = String(item?.bestChunk?.excerpt ?? "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 480);
-    return {
-      id: idx,
-      requirement: String(item?.requirement ?? ""),
-      mustHave: Boolean(item?.mustHave),
-      similarity: Number(item?.similarity ?? 0),
-      baseScore: Number(
-        item?.rawScore10 ?? item?.score10 ?? Math.round((item?.similarity ?? 0) * 10)
-      ),
-      excerpt,
-    };
-  });
-
-  const candidates = payloadItems.filter((item) => item.requirement);
-  if (!candidates.length) return null;
-
-  const payload = JSON.stringify(
-    {
-      requirements: candidates,
-      instructions:
-        "Score each requirement from 0 to 10 based on how well the excerpt actually proves the skill. Focus on meaning, not literal keywords. Mark items without clear evidence as missing.",
-    },
-    null,
-    2
-  );
-
-  const system =
-    "You are a senior talent intelligence reviewer. Judge how well each CV excerpt demonstrates the underlying requirement. Prefer semantic understanding over keyword overlap.";
-
-  try {
-    const ai = await chatJson<{
-      evaluations?: Array<{
-        id?: number;
-        score?: number;
-        match?: SemanticVerdict;
-        explanation?: string;
-      }>;
-    }>(
-      [
-        { role: "system", content: system },
-        {
-          role: "user",
-          content:
-            'Analyse the following requirements and respond with JSON shaped as {"evaluations": [{"id": number, "score": number, "match": "strong"|"partial"|"weak"|"missing", "explanation"?: string}]}.' +
-            "\n" +
-            payload,
-        },
-      ],
-      { temperature: 0.2, maxTokens: 700 }
-    );
-
-    if (!ai || !Array.isArray(ai.evaluations)) return null;
-
-    const results = new Map<
-      number,
-      {
-        score: number | null;
-        match: SemanticVerdict | null;
-        explanation?: string;
-      }
-    >();
-
-    for (const item of ai.evaluations) {
-      if (item === null || typeof item !== "object") continue;
-      const idx = Number(item.id);
-      if (!Number.isInteger(idx)) continue;
-      const hasNumericScore =
-        typeof item.score === "number" && Number.isFinite(item.score);
-      const score = hasNumericScore ? clampScore10(item.score) : null;
-      const verdict =
-        item.match && ["strong", "partial", "weak", "missing"].includes(item.match)
-          ? (item.match as SemanticVerdict)
-          : null;
-      const explanation = item.explanation
-        ? String(item.explanation || "").slice(0, 280)
-        : undefined;
-      if (score !== null || verdict || explanation)
-        results.set(idx, { score, match: verdict, explanation });
-    }
-
-    return results.size ? results : null;
-  } catch (err) {
-    console.error("semantic requirement review failed", err);
-    return null;
-  }
-}
 function gapsFrom(perReq: any[]) {
   const missing = perReq
     .filter(
       (r: any) =>
         r.mustHave &&
-        (
-          r.semanticVerdict === "missing" ||
-          (Number(r.semanticScore10 ?? NaN) <= 3 &&
-            Number.isFinite(Number(r.semanticScore10))) ||
-          (r.similarity < 0.32 &&
-            Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) <= 6)
-        )
+        r.similarity < 0.32 &&
+        Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) <= 6
     )
     .map((r: any) => r.requirement);
   const improve = perReq
     .filter(
       (r: any) =>
-        (r.semanticVerdict !== "missing" || !r.mustHave) &&
-        (
-          (Number.isFinite(Number(r.semanticScore10))
-            ? Number(r.semanticScore10) >= 4 && Number(r.semanticScore10) < 8
-            : r.similarity >= 0.25 && r.similarity < 0.8) &&
-          Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) < 8
-        )
+        r.similarity >= 0.25 &&
+        r.similarity < 0.8 &&
+        Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) < 8
     )
     .map((r: any) => r.requirement);
   return { mustHaveMissing: missing, improve };
