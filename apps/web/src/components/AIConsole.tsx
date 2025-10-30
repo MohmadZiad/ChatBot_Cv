@@ -280,7 +280,7 @@ function computeMetricsFromResult(
     }));
 
   const weightedScore = Number(result.score ?? 0);
-  const gatePassed = must.length === 0 || percent(must) >= 80;
+  const gatePassed = must.length === 0 || percent(must) >= 60;
 
   const riskFlags: string[] = [];
   if (!gatePassed) riskFlags.push("must_threshold");
