@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
   Check,
   ClipboardCopy,
+  FileText,
   Loader2,
   Sparkles,
   Target,
@@ -29,6 +30,7 @@ import {
   type AnalysisMetrics,
 } from "@/services/api/analyses";
 import { jobsApi, type Job } from "@/services/api/jobs";
+import { cvApi } from "@/services/api/cv";
 import {
   assistantApi,
   type ExtractedJobFields,
@@ -176,6 +178,26 @@ const bubbleVariants = {
   exit: { opacity: 0, y: -6, scale: 0.98 },
 };
 
+const escapeRegExp = (value: string) =>
+  value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+
+type HighlightTone = "match" | "bonus" | "gap";
+
+type CvHighlight = {
+  start: number;
+  end: number;
+  tone: HighlightTone;
+  requirement: string;
+};
+
+const highlightClassMap: Record<HighlightTone, string> = {
+  match:
+    "inline-block rounded bg-emerald-100 px-1 font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100",
+  bonus:
+    "inline-block rounded bg-amber-100 px-1 font-semibold text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
+  gap: "inline-block rounded bg-rose-100 px-1 font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-100",
+};
+
 /* --------------------------------- page -------------------------------- */
 
 export default function ResultDetail() {
@@ -214,6 +236,15 @@ export default function ResultDetail() {
             coachError: "تعذّر توليد التحسينات.",
             relatedTitle: "مقارنة التحليلات",
             relatedEmpty: "لم يتم تشغيل تحليلات أخرى لهذه الوظيفة بعد.",
+            cvTitle: "نص السيرة الذاتية",
+            cvLoading: "جارٍ تحميل نص السيرة...",
+            cvError: "تعذّر تحميل نص السيرة.",
+            cvEmpty: "لا يوجد نص مستخرج لعرضه.",
+            cvLegendMatch: "متطلبات متطابقة",
+            cvLegendBonus: "ميزة إضافية",
+            cvLegendGap: "تفاصيل ناقصة",
+            cvMissingLabel: "المفقود",
+            cvCopy: "انسخ السيرة",
           }
         : {
             heading: "Job overview",
@@ -245,6 +276,15 @@ export default function ResultDetail() {
             coachError: "Could not fetch improvement tips.",
             relatedTitle: "Comparison",
             relatedEmpty: "No other analyses exist for this job yet.",
+            cvTitle: "Full CV text",
+            cvLoading: "Loading CV text...",
+            cvError: "Failed to load CV text.",
+            cvEmpty: "No extracted CV text is available.",
+            cvLegendMatch: "Matches requirements",
+            cvLegendBonus: "Bonus skill",
+            cvLegendGap: "Needs attention",
+            cvMissingLabel: "Missing",
+            cvCopy: "Copy CV",
           },
     [lang]
   );
@@ -292,6 +332,11 @@ export default function ResultDetail() {
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachCopied, setCoachCopied] = useState(false);
 
+  const [cvText, setCvText] = useState<string>("");
+  const [cvLoading, setCvLoading] = useState(false);
+  const [cvError, setCvError] = useState<string | null>(null);
+  const [cvCopied, setCvCopied] = useState(false);
+
   /* ----------------------------- derived data ----------------------------- */
 
   const fallbackLanguages = useMemo(() => {
@@ -336,6 +381,16 @@ export default function ResultDetail() {
     }),
     [lang]
   );
+
+  const languagesBullet = useMemo(() => {
+    if (!displayLanguages.length) return null;
+    const labels = displayLanguages.map((item) => item.label);
+    const separator = lang === "ar" ? "، " : ", ";
+    const joined = labels.join(separator);
+    return lang === "ar"
+      ? `اللغات المطلوبة: ${joined}`
+      : `Languages requested: ${joined}`;
+  }, [displayLanguages, lang]);
 
   const relatedList = useMemo(() => {
     if (!relatedAnalyses.length) return [];
@@ -509,15 +564,25 @@ export default function ResultDetail() {
     setQuickLoading(true);
     setQuickError(null);
     try {
-      const res = await assistantApi.quickSuggestions("ملخص", job.description);
-      setQuickSummary(parseBulletLines(res.output));
+      const topic = lang === "en" ? "Summary" : "ملخص";
+      const res = await assistantApi.quickSuggestions(
+        topic,
+        job.description,
+        lang
+      );
+      const bullets = parseBulletLines(res.output);
+      const merged =
+        languagesBullet && !bullets.includes(languagesBullet)
+          ? [...bullets, languagesBullet]
+          : bullets;
+      setQuickSummary(merged);
     } catch (err: unknown) {
       setQuickError(getErrorMessage(err, "failed to generate"));
       setQuickSummary([]);
     } finally {
       setQuickLoading(false);
     }
-  }, [job?.description]);
+  }, [job?.description, lang, languagesBullet]);
 
   const handleQuickCopy = useCallback(() => {
     if (!quickSummary.length) return;
@@ -529,6 +594,25 @@ export default function ResultDetail() {
       });
     }
   }, [quickSummary]);
+
+  const handleCvCopy = useCallback(() => {
+    if (!cvText.trim()) return;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(cvText).then(() => {
+        setCvCopied(true);
+        window.setTimeout(() => setCvCopied(false), 1600);
+      });
+    }
+  }, [cvText]);
+
+  useEffect(() => {
+    if (!languagesBullet) return;
+    setQuickSummary((prev) => {
+      if (!prev.length) return prev;
+      if (prev.includes(languagesBullet)) return prev;
+      return [...prev, languagesBullet];
+    });
+  }, [languagesBullet]);
 
   const handleCoach = useCallback(async () => {
     if (!data?.jobId || !data?.cvId) return;
@@ -561,6 +645,125 @@ export default function ResultDetail() {
       });
     }
   }, [coach]);
+
+  useEffect(() => {
+    if (!data?.cvId) {
+      setCvText("");
+      return;
+    }
+    let alive = true;
+    setCvLoading(true);
+    setCvError(null);
+    cvApi
+      .getById(data.cvId)
+      .then((res) => {
+        if (!alive) return;
+        setCvText(res.cv?.parsedText ?? "");
+      })
+      .catch((err: unknown) => {
+        if (!alive) return;
+        setCvError(getErrorMessage(err, jobCopy.cvError));
+        setCvText("");
+      })
+      .finally(() => {
+        if (alive) setCvLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [data?.cvId, jobCopy.cvError]);
+
+  useEffect(() => {
+    setCvCopied(false);
+  }, [cvText]);
+
+  const cvHighlights = useMemo(() => {
+    if (!cvText.trim()) return [] as CvHighlight[];
+    const breakdown = data?.breakdown ?? [];
+    if (!breakdown.length) return [] as CvHighlight[];
+    const highlights: CvHighlight[] = [];
+    const seen = new Set<string>();
+    for (const item of breakdown) {
+      const snippet = item.bestChunk?.excerpt?.trim();
+      if (!snippet) continue;
+      const key = `${item.requirement}__${snippet}`;
+      if (seen.has(key)) continue;
+      const pattern = escapeRegExp(snippet).replace(/\s+/g, "\\s+");
+      const regex = new RegExp(pattern, "i");
+      const match = regex.exec(cvText);
+      if (!match) continue;
+      const start = match.index;
+      const end = start + match[0].length;
+      if (highlights.some((range) => start < range.end && end > range.start)) {
+        continue;
+      }
+      let tone: HighlightTone;
+      if (item.similarity >= 0.45) {
+        tone = item.mustHave ? "match" : "bonus";
+      } else if (item.similarity >= 0.25) {
+        tone = item.mustHave ? "gap" : "bonus";
+      } else {
+        tone = "gap";
+      }
+      highlights.push({ start, end, tone, requirement: item.requirement });
+      seen.add(key);
+    }
+    return highlights.sort((a, b) => a.start - b.start);
+  }, [cvText, data?.breakdown]);
+
+  const highlightedCvNodes = useMemo(() => {
+    if (!cvText) return [] as JSX.Element[];
+    if (!cvHighlights.length) {
+      return cvText
+        ? [
+            <span key="cv-text-all" className="whitespace-pre-wrap">
+              {cvText}
+            </span>,
+          ]
+        : [];
+    }
+    const nodes: JSX.Element[] = [];
+    const length = cvText.length;
+    let cursor = 0;
+    let keyIndex = 0;
+    const pushSegment = (segment: string) => {
+      if (!segment) return;
+      nodes.push(
+        <span
+          key={`cv-text-${keyIndex++}`}
+          className="whitespace-pre-wrap"
+        >
+          {segment}
+        </span>
+      );
+    };
+    for (const range of cvHighlights) {
+      const start = Math.max(0, Math.min(range.start, length));
+      const end = Math.max(start, Math.min(range.end, length));
+      if (cursor < start) {
+        pushSegment(cvText.slice(cursor, start));
+      }
+      if (start < end) {
+        nodes.push(
+          <mark
+            key={`cv-highlight-${keyIndex++}`}
+            className={`${highlightClassMap[range.tone]} whitespace-pre-wrap`}
+            title={range.requirement}
+          >
+            {cvText.slice(start, end)}
+          </mark>
+        );
+      }
+      cursor = end;
+    }
+    if (cursor < length) {
+      pushSegment(cvText.slice(cursor));
+    }
+    if (!nodes.length && cvText) {
+      pushSegment(cvText);
+    }
+    return nodes;
+  }, [cvHighlights, cvText]);
 
   /* --------------------------------- render -------------------------------- */
 
@@ -1099,6 +1302,75 @@ export default function ResultDetail() {
               </ul>
             </div>
           ) : null}
+        </div>
+      </motion.section>
+      <motion.section
+        className="rounded-3xl border border-[#FFD7B3]/70 bg-gradient-to-br from-white via-white/95 to-[#FFF1E3] p-6 shadow-[0_28px_90px_-42px_rgba(255,122,0,0.5)] dark:from-[#241915] dark:via-[#241915]/95 dark:to-[#1A1412] dark:border-white/10"
+        {...motionCardProps}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#D85E00] dark:text-white">
+              <FileText className="h-4 w-4" /> {jobCopy.cvTitle}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm dark:bg-emerald-500/20 dark:text-emerald-100">
+                  {jobCopy.cvLegendMatch}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800 shadow-sm dark:bg-amber-500/20 dark:text-amber-100">
+                  {jobCopy.cvLegendBonus}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold text-rose-700 shadow-sm dark:bg-rose-500/20 dark:text-rose-100">
+                  {jobCopy.cvLegendGap}
+                </span>
+              </div>
+              <Button
+                onClick={handleCvCopy}
+                disabled={!cvText.trim() || cvLoading}
+                className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-[#FFF2E8] px-4 py-2 text-xs font-semibold text-[#D85E00] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#FFD4A8] disabled:opacity-60"
+              >
+                {cvCopied ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <ClipboardCopy className="h-3.5 w-3.5" />
+                )}
+                {jobCopy.cvCopy}
+              </Button>
+            </div>
+          </div>
+          {missingMust.length ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#B54708] dark:text-[#FFB26B]">
+              <span className="font-semibold text-[#D85E00] dark:text-[#FFB26B]">
+                {jobCopy.cvMissingLabel}:
+              </span>
+              {missingMust.map((item, idx) => (
+                <span
+                  key={`${item}-${idx}`}
+                  className="rounded-full bg-rose-100 px-3 py-1 text-[11px] font-semibold text-rose-700 shadow-sm dark:bg-rose-500/20 dark:text-rose-100"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="rounded-3xl border border-[#FFE4C8] bg-white/90 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
+            {cvLoading ? (
+              <AnimatedLoader label={jobCopy.cvLoading} />
+            ) : cvError ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-sm text-red-700">
+                {cvError}
+              </div>
+            ) : cvText.trim() ? (
+              <div className="max-h-96 overflow-y-auto rounded-2xl border border-[#FFD7B3]/60 bg-white/85 p-4 text-xs leading-relaxed text-[#2F3A4A]/80 dark:border-white/10 dark:bg-white/5 dark:text-white/80">
+                {highlightedCvNodes}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#FFD7B3] px-3 py-8 text-center text-xs text-[#2F3A4A]/60 dark:border-white/10 dark:text-white/60">
+                {jobCopy.cvEmpty}
+              </div>
+            )}
+          </div>
         </div>
       </motion.section>
       <motion.section
