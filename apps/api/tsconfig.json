@@ -1,16 +1,21 @@
 {
-  "name": "@apps/api",
-  "private": true,
-  "type": "module",
-  "main": "dist/index.js",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node --loader tsx src/index.ts",
-    "prestart": "prisma migrate deploy",
-    "prisma:generate": "prisma generate",
-    "postinstall": "prisma generate",
-    "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  }
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "resolveJsonModule": true,
+    "noEmitOnError": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

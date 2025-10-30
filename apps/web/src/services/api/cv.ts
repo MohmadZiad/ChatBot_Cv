@@ -1,8 +1,5 @@
 // apps/web/src/services/api/cv.ts
-import { http } from "../http";
-
-const ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
-const API = `${ORIGIN}/api`;
+import { http, API } from "../http";
 
 export type CV = {
   id: string;
