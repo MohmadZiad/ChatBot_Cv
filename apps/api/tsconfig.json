@@ -1,20 +1,16 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "typeRoots": [
-      "./types",
-      "./node_modules/@types"
-    ],
-    "baseUrl": "."
-  },
-  "include": [
-    "src",
-    "types"
-  ]
+  "name": "@apps/api",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --loader tsx src/index.ts",
+    "prestart": "prisma migrate deploy",
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
 }
