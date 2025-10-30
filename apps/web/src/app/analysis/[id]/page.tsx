@@ -698,20 +698,7 @@ export default function ResultDetail() {
         continue;
       }
       let tone: HighlightTone;
-      if (item.semanticVerdict === "missing" || item.semanticVerdict === "weak") {
-        tone = "gap";
-      } else if (item.semanticVerdict === "partial") {
-        tone = "bonus";
-      } else if (item.semanticVerdict === "strong") {
-        tone = item.mustHave ? "match" : "bonus";
-      } else if (
-        typeof item.semanticScore10 === "number" &&
-        Number.isFinite(item.semanticScore10)
-      ) {
-        if (item.semanticScore10 >= 8) tone = item.mustHave ? "match" : "bonus";
-        else if (item.semanticScore10 >= 4) tone = "bonus";
-        else tone = "gap";
-      } else if (item.similarity >= 0.45) {
+      if (item.similarity >= 0.45) {
         tone = item.mustHave ? "match" : "bonus";
       } else if (item.similarity >= 0.25) {
         tone = item.mustHave ? "gap" : "bonus";
