@@ -54,8 +54,8 @@ export default function Topbar() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between rounded-2xl border border-[var(--color-border)] bg-[var(--surface)]/90 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
-          <span className="inline-flex size-9 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white shadow">
-            <span className="text-lg font-semibold">AI</span>
+          <span className="inline-flex size-10 items-center justify-center rounded-2xl border border-[#FF7A00]/30 bg-white text-[#FF7A00] shadow-[0_8px_20px_rgba(255,122,0,0.18)] transition-transform duration-300 dark:border-[#FFB26B]/30 dark:bg-[#1f2530] dark:text-[#FFB26B]">
+            <span className="text-lg font-bold tracking-tight">CV</span>
           </span>
           <div className="leading-tight">
             <div className="text-sm font-semibold text-[var(--color-primary)]">

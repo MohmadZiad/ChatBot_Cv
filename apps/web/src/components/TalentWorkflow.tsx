@@ -678,6 +678,62 @@ function detectLanguages(text: string): string[] {
   return Array.from(found);
 }
 
+const NAME_DISQUALIFIERS =
+  /(summary|objective|profile|experience|skills|engineer|developer|team|manager|technical|lead|professional)/i;
+
+function prettifyFallbackName(value: string): string {
+  const cleaned = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "Candidate";
+  return cleaned
+    .split(" ")
+    .map((word) =>
+      /[A-Za-z]/.test(word.charAt(0))
+        ? word.charAt(0).toUpperCase() + word.slice(1)
+        : word
+    )
+    .join(" ");
+}
+
+function isLikelyName(value: string): boolean {
+  const normalized = value.replace(/[\u2022#*•\-]/g, "").trim();
+  if (!normalized) return false;
+  if (normalized.length > 80) return false;
+  if (NAME_DISQUALIFIERS.test(normalized)) return false;
+
+  const compact = normalized.replace(/\s+/g, "");
+  if (!compact.length) return false;
+
+  const words = normalized.split(/\s+/);
+  if (words.length > 6) return false;
+
+  const letters = normalized.replace(/[^A-Za-z\u0600-\u06FF]/g, "");
+  if (!letters.length) return false;
+
+  const letterRatio = letters.length / compact.length;
+  if (letterRatio < 0.6) return false;
+
+  return true;
+}
+
+function extractDisplayName(lines: string[], fallback: string): string {
+  for (const raw of lines.slice(0, 8)) {
+    if (!raw) continue;
+    const withoutBullets = raw.replace(/[\u2022#*•\-]/g, " ").trim();
+    if (!withoutBullets) continue;
+
+    const labeled = withoutBullets.match(
+      /^(?:name|full name|الاسم|الاسم الكامل)\s*[:\-]+\s*(.+)$/i
+    );
+    if (labeled) {
+      const candidate = labeled[1].trim();
+      if (isLikelyName(candidate)) return candidate;
+    }
+
+    if (isLikelyName(withoutBullets)) return withoutBullets;
+  }
+  return fallback;
+}
+
 function parseCandidateMeta(
   text: string | null | undefined,
   fallbackName: string,
@@ -689,7 +745,8 @@ function parseCandidateMeta(
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const displayName = lines[0]?.replace(/[#*•\-]/g, "").trim() || fallbackName;
+  const fallbackDisplayName = prettifyFallbackName(fallbackName);
+  const displayName = extractDisplayName(lines, fallbackDisplayName);
 
   const emailMatch = safeText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
   const phoneMatch = safeText.match(/\+?[0-9][0-9\s().-]{6,}/g);
