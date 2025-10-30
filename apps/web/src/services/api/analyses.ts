@@ -16,6 +16,10 @@ export type PerRequirement = {
   weight: number;
   similarity: number;
   score10: number;
+  rawScore10?: number;
+  semanticScore10?: number;
+  semanticVerdict?: "strong" | "partial" | "weak" | "missing";
+  semanticNote?: string;
   bestChunkId?: number | null;
   bestChunk?: { id?: number; section: string; excerpt: string } | null;
 };
@@ -96,6 +100,27 @@ function normalizeBreakdown(input: unknown): PerRequirement[] {
     const record = entry as Record<string, unknown>;
     const similarity = toNumber(record.similarity);
     const score10 = toNumber(record.score10 ?? similarity * 10);
+    const rawScore10 =
+      record.rawScore10 === undefined
+        ? undefined
+        : toNumber(record.rawScore10, score10);
+    const semanticScore10 =
+      record.semanticScore10 === undefined
+        ? undefined
+        : toNumber(record.semanticScore10);
+    const verdictRaw =
+      typeof record.semanticVerdict === "string"
+        ? record.semanticVerdict
+        : undefined;
+    const semanticVerdict =
+      verdictRaw &&
+      ["strong", "partial", "weak", "missing"].includes(verdictRaw)
+        ? (verdictRaw as PerRequirement["semanticVerdict"])
+        : undefined;
+    const semanticNote =
+      typeof record.semanticNote === "string"
+        ? record.semanticNote
+        : undefined;
     const bestChunkIdRaw = record.bestChunkId;
     const bestChunkId =
       bestChunkIdRaw === null || bestChunkIdRaw === undefined
@@ -108,6 +133,10 @@ function normalizeBreakdown(input: unknown): PerRequirement[] {
       weight: toNumber(record.weight, 1),
       similarity,
       score10,
+      rawScore10,
+      semanticScore10,
+      semanticVerdict,
+      semanticNote,
       bestChunkId,
       bestChunk:
         record.bestChunk && typeof record.bestChunk === "object"

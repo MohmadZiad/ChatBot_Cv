@@ -188,8 +188,6 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
   const perReq: any[] = [];
   const evidence: any[] = [];
-  let totalWeight = 0;
-  let weightedSum = 0;
 
   for (let i = 0; i < reqs.length; i++) {
     const r = reqs[i];
@@ -226,8 +224,6 @@ export async function runAnalysis(jobId: string, cvId: string) {
     if (r.mustHave && best.score < 0.3) final10 = Math.max(0, final10 - 4);
 
     const w = Number(r.weight ?? 1);
-    totalWeight += w;
-    weightedSum += final10 * w;
 
     const bestChunk =
       best.idx >= 0
@@ -244,6 +240,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       weight: w,
       similarity: Number(best.score.toFixed(3)),
       score10: final10,
+      rawScore10: final10,
       bestChunkId: bestChunk?.id ?? null,
       bestChunk,
     });
@@ -262,6 +259,47 @@ export async function runAnalysis(jobId: string, cvId: string) {
     }
   }
 
+  const semanticAdjustments = await refineRequirementScoresWithAI(perReq);
+  if (semanticAdjustments?.size) {
+    for (const [idx, result] of semanticAdjustments.entries()) {
+      const row = perReq[idx];
+      if (!row || typeof row !== "object") continue;
+      const baseScore = Number(
+        row.rawScore10 ?? row.score10 ?? Math.round((row.similarity ?? 0) * 10)
+      );
+      const verdict = result.match ?? null;
+      const hasAiScore =
+        result.score !== null && Number.isFinite(Number(result.score));
+      if (hasAiScore) {
+        const aiScore = clampScore10(result.score ?? 0);
+        row.semanticScore10 = aiScore;
+        row.semanticVerdict = verdict ?? undefined;
+        if (result.explanation) row.semanticNote = result.explanation;
+
+        let combined = Math.round(aiScore * 0.7 + baseScore * 0.3);
+        if (verdict === "missing") combined = Math.min(aiScore, 2);
+        else if (verdict === "weak")
+          combined = Math.min(combined, Math.round((aiScore + baseScore) / 2));
+        if (aiScore < baseScore) combined = Math.min(combined, aiScore);
+        row.score10 = clampScore10(combined);
+      } else {
+        if (verdict) row.semanticVerdict = verdict;
+        if (result.explanation) row.semanticNote = result.explanation;
+        if (verdict === "missing")
+          row.score10 = clampScore10(Math.min(baseScore, 2));
+        else if (verdict === "weak")
+          row.score10 = clampScore10(Math.min(baseScore, Math.max(0, Math.round(baseScore * 0.6))));
+      }
+    }
+  }
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const item of perReq) {
+    const w = Number(item?.weight ?? 1) || 1;
+    totalWeight += w;
+    weightedSum += Number(item?.score10 ?? 0) * w;
+  }
   const score10 =
     totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(1)) : 0;
 
