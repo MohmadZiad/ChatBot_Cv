@@ -45,20 +45,178 @@ function keywordRatio(tokens: string[], text: string): number {
   if (!tokens.length) return 0;
   const normalized = normalizeForKeywords(text);
   if (!normalized) return 0;
-  const compact = normalized.replace(/[.\-_/\s]+/g, "");
+  const textTokens = normalized.split(" ").filter(Boolean);
+  const textSet = new Set(textTokens);
+  const compactSource = normalized.replace(/[.\-_/\s]+/g, "");
+
   let hits = 0;
   for (const token of tokens) {
     if (!token) continue;
-    if (normalized.includes(token) || compact.includes(token)) hits++;
+    if (textSet.has(token)) {
+      hits++;
+      continue;
+    }
+
+    const compactToken = token.replace(/[.\-_/\s]+/g, "");
+    if (compactToken && compactSource.includes(compactToken)) {
+      hits++;
+      continue;
+    }
+
+    for (const word of textTokens) {
+      const minLen = Math.min(word.length, token.length);
+      if (minLen < 4) continue;
+      const common = longestCommonSubsequenceLen(word, token);
+      if (common / minLen >= 0.7) {
+        hits++;
+        break;
+      }
+    }
   }
   return hits / tokens.length;
 }
+function longestCommonSubsequenceLen(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () =>
+    new Array<number>(n + 1).fill(0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+const clampScore10 = (value: unknown): number => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  const rounded = Math.round(num);
+  if (rounded < 0) return 0;
+  if (rounded > 10) return 10;
+  return rounded;
+};
+
+type SemanticVerdict = "strong" | "partial" | "weak" | "missing";
+
+async function refineRequirementScoresWithAI(perReq: any[]) {
+  const payloadItems = perReq.map((item: any, idx: number) => {
+    const excerpt = String(item?.bestChunk?.excerpt ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 480);
+    return {
+      id: idx,
+      requirement: String(item?.requirement ?? ""),
+      mustHave: Boolean(item?.mustHave),
+      similarity: Number(item?.similarity ?? 0),
+      baseScore: Number(
+        item?.rawScore10 ?? item?.score10 ?? Math.round((item?.similarity ?? 0) * 10)
+      ),
+      excerpt,
+    };
+  });
+
+  const candidates = payloadItems.filter((item) => item.requirement);
+  if (!candidates.length) return null;
+
+  const payload = JSON.stringify(
+    {
+      requirements: candidates,
+      instructions:
+        "Score each requirement from 0 to 10 based on how well the excerpt actually proves the skill. Focus on meaning, not literal keywords. Mark items without clear evidence as missing.",
+    },
+    null,
+    2
+  );
+
+  const system =
+    "You are a senior talent intelligence reviewer. Judge how well each CV excerpt demonstrates the underlying requirement. Prefer semantic understanding over keyword overlap.";
+
+  try {
+    const ai = await chatJson<{
+      evaluations?: Array<{
+        id?: number;
+        score?: number;
+        match?: SemanticVerdict;
+        explanation?: string;
+      }>;
+    }>(
+      [
+        { role: "system", content: system },
+        {
+          role: "user",
+          content:
+            'Analyse the following requirements and respond with JSON shaped as {"evaluations": [{"id": number, "score": number, "match": "strong"|"partial"|"weak"|"missing", "explanation"?: string}]}.' +
+            "\n" +
+            payload,
+        },
+      ],
+      { temperature: 0.2, maxTokens: 700 }
+    );
+
+    if (!ai || !Array.isArray(ai.evaluations)) return null;
+
+    const results = new Map<
+      number,
+      {
+        score: number | null;
+        match: SemanticVerdict | null;
+        explanation?: string;
+      }
+    >();
+
+    for (const item of ai.evaluations) {
+      if (item === null || typeof item !== "object") continue;
+      const idx = Number(item.id);
+      if (!Number.isInteger(idx)) continue;
+      const hasNumericScore =
+        typeof item.score === "number" && Number.isFinite(item.score);
+      const score = hasNumericScore ? clampScore10(item.score) : null;
+      const verdict =
+        item.match && ["strong", "partial", "weak", "missing"].includes(item.match)
+          ? (item.match as SemanticVerdict)
+          : null;
+      const explanation = item.explanation
+        ? String(item.explanation || "").slice(0, 280)
+        : undefined;
+      if (score !== null || verdict || explanation)
+        results.set(idx, { score, match: verdict, explanation });
+    }
+
+    return results.size ? results : null;
+  } catch (err) {
+    console.error("semantic requirement review failed", err);
+    return null;
+  }
+}
 function gapsFrom(perReq: any[]) {
   const missing = perReq
-    .filter((r: any) => r.mustHave && r.similarity < 0.35)
+    .filter(
+      (r: any) =>
+        r.mustHave &&
+        (
+          r.semanticVerdict === "missing" ||
+          (Number(r.semanticScore10 ?? NaN) <= 3 &&
+            Number.isFinite(Number(r.semanticScore10))) ||
+          (r.similarity < 0.32 &&
+            Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) <= 6)
+        )
+    )
     .map((r: any) => r.requirement);
   const improve = perReq
-    .filter((r: any) => r.similarity >= 0.2 && (r.score10 ?? 0) < 7)
+    .filter(
+      (r: any) =>
+        (r.semanticVerdict !== "missing" || !r.mustHave) &&
+        (
+          (Number.isFinite(Number(r.semanticScore10))
+            ? Number(r.semanticScore10) >= 4 && Number(r.semanticScore10) < 8
+            : r.similarity >= 0.25 && r.similarity < 0.8) &&
+          Number(r.score10 ?? Math.round((r.similarity ?? 0) * 10)) < 8
+        )
+    )
     .map((r: any) => r.requirement);
   return { mustHaveMissing: missing, improve };
 }
@@ -142,8 +300,6 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
   const perReq: any[] = [];
   const evidence: any[] = [];
-  let totalWeight = 0;
-  let weightedSum = 0;
 
   for (let i = 0; i < reqs.length; i++) {
     const r = reqs[i];
@@ -163,8 +319,8 @@ export async function runAnalysis(jobId: string, cvId: string) {
       let boostedIdx = best.idx;
       for (let j = 0; j < chunks.length; j++) {
         const ratio = keywordRatio(keywordTokens, chunks[j].content || "");
-        if (ratio >= 0.55) {
-          const candidate = Math.min(0.98, 0.55 + ratio * 0.45);
+        if (ratio >= 0.4) {
+          const candidate = Math.min(0.98, 0.6 + ratio * 0.4);
           if (candidate > boostedScore) {
             boostedScore = candidate;
             boostedIdx = j;
@@ -180,8 +336,6 @@ export async function runAnalysis(jobId: string, cvId: string) {
     if (r.mustHave && best.score < 0.3) final10 = Math.max(0, final10 - 4);
 
     const w = Number(r.weight ?? 1);
-    totalWeight += w;
-    weightedSum += final10 * w;
 
     const bestChunk =
       best.idx >= 0
@@ -198,6 +352,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
       weight: w,
       similarity: Number(best.score.toFixed(3)),
       score10: final10,
+      rawScore10: final10,
       bestChunkId: bestChunk?.id ?? null,
       bestChunk,
     });
@@ -216,6 +371,47 @@ export async function runAnalysis(jobId: string, cvId: string) {
     }
   }
 
+  const semanticAdjustments = await refineRequirementScoresWithAI(perReq);
+  if (semanticAdjustments?.size) {
+    for (const [idx, result] of semanticAdjustments.entries()) {
+      const row = perReq[idx];
+      if (!row || typeof row !== "object") continue;
+      const baseScore = Number(
+        row.rawScore10 ?? row.score10 ?? Math.round((row.similarity ?? 0) * 10)
+      );
+      const verdict = result.match ?? null;
+      const hasAiScore =
+        result.score !== null && Number.isFinite(Number(result.score));
+      if (hasAiScore) {
+        const aiScore = clampScore10(result.score ?? 0);
+        row.semanticScore10 = aiScore;
+        row.semanticVerdict = verdict ?? undefined;
+        if (result.explanation) row.semanticNote = result.explanation;
+
+        let combined = Math.round(aiScore * 0.7 + baseScore * 0.3);
+        if (verdict === "missing") combined = Math.min(aiScore, 2);
+        else if (verdict === "weak")
+          combined = Math.min(combined, Math.round((aiScore + baseScore) / 2));
+        if (aiScore < baseScore) combined = Math.min(combined, aiScore);
+        row.score10 = clampScore10(combined);
+      } else {
+        if (verdict) row.semanticVerdict = verdict;
+        if (result.explanation) row.semanticNote = result.explanation;
+        if (verdict === "missing")
+          row.score10 = clampScore10(Math.min(baseScore, 2));
+        else if (verdict === "weak")
+          row.score10 = clampScore10(Math.min(baseScore, Math.max(0, Math.round(baseScore * 0.6))));
+      }
+    }
+  }
+
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const item of perReq) {
+    const w = Number(item?.weight ?? 1) || 1;
+    totalWeight += w;
+    weightedSum += Number(item?.score10 ?? 0) * w;
+  }
   const score10 =
     totalWeight > 0 ? Number((weightedSum / totalWeight).toFixed(1)) : 0;
 
@@ -234,7 +430,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
   const mustPercent = pct(mustReqs);
   const nicePercent = pct(niceReqs);
-  const gatePassed = mustReqs.length === 0 || mustPercent >= 80;
+  const gatePassed = mustReqs.length === 0 || mustPercent >= 60;
 
   const topStrengths = perReq
     .filter((item) => Number(item.score10 ?? 0) >= 8)
@@ -450,7 +646,7 @@ export async function recommendTopCandidates(
       gatePassed:
         typeof metrics?.gatePassed === "boolean"
           ? metrics.gatePassed
-          : mustPercent >= 80,
+          : mustPercent >= 60,
       missingMust,
       improvement,
     };
@@ -627,7 +823,7 @@ export async function improvementSuggestions(
         score,
         mustPercent,
         nicePercent,
-        gatePassed: metrics?.gatePassed ?? mustPercent >= 80,
+        gatePassed: metrics?.gatePassed ?? mustPercent >= 60,
         missingMust,
         improvement,
         highlights,

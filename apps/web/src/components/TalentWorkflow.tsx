@@ -15,6 +15,9 @@ import {
   FileOutput,
   FileText,
   Filter,
+  Github,
+  Link2,
+  Linkedin,
   Loader2,
   Sparkles,
   Pin,
@@ -81,6 +84,20 @@ type CandidateScores = {
   missingMust: string[];
   duplicateOf?: string;
 };
+
+const STATUS_BADGE_MAP: Record<CandidateScores["status"], string> = {
+  recommended: "bg-[#DCFCE7] text-[#166534]",
+  consider: "bg-[#FEF3C7] text-[#92400E]",
+  excluded: "bg-[#FDE8E8] text-[#B91C1C]",
+};
+
+function getStatusBadgeClass(
+  scores: CandidateScores,
+  isDuplicate: boolean
+): string {
+  if (isDuplicate) return "bg-[#E0E7FF] text-[#3730A3]";
+  return STATUS_BADGE_MAP[scores.status];
+}
 
 type CandidateResult = {
   id: string;
@@ -269,7 +286,22 @@ const COPY = {
       mustGate: "استبعاد غير المستوفين للـMust-have",
       exp24: "خبرة 2-4 سنوات",
       react: "يتقن React",
+      highNice: "مهارات إضافية فوق 55%",
       recommended: "موصى به فقط",
+      languageLabel: "اللغة",
+      languageAny: "كل اللغات",
+      languageArabic: "العربية",
+      languageEnglish: "الإنجليزية",
+      languageBilingual: "ثنائي اللغة",
+      statusLabel: "الحالة",
+      statusAny: "الكل",
+      statusRecommended: "موصى به",
+      statusConsider: "قابل للمقابلة",
+      statusExcluded: "مستبعد",
+      scoreLabel: "درجة مطابقة",
+      scoreAny: "بدون حد",
+      score70: "70%+",
+      score80: "80%+",
     },
     insights: {
       summary: {
@@ -278,7 +310,14 @@ const COPY = {
         excluded: "تم استبعاده بدرجة {score}%.",
         duplicate: "مكرر لنفس المتقدم ({name}).",
       },
-      gateFail: "لم يحقق 80% من مهارات الـMust-have.",
+      summaryDetails: {
+        must: "تغطية الـMust-have {value}.",
+        nice: "المهارات الإضافية {value}.",
+        languages: "اللغات: {value}.",
+        experience: "الخبرة: {value}.",
+        quality: "جودة السيرة: {value}.",
+      },
+      gateFail: "لم يحقق 60% من مهارات الـMust-have.",
       strengths: {
         must: "حقق {value}% من متطلبات الـMust-have.",
         nice: "أظهر {value}% من مهارات Nice-to-have.",
@@ -302,9 +341,15 @@ const COPY = {
       empty: "اختر على الأقل مرشحين للمقارنة.",
       strengths: "نقاط القوة",
       weaknesses: "نقاط الضعف",
-      skills: "المهارات",
-      experience: "الخبرة",
-      projects: "المشاريع والروابط",
+      skills: "أهم المهارات",
+      languages: "اللغات",
+      links: "روابط مهمة",
+      scorecard: {
+        heading: "مؤشرات المطابقة",
+        final: "الدرجة النهائية",
+        must: "Must-have",
+        nice: "Nice-to-have",
+      },
       recommendation: "التوصية",
       close: "إغلاق المقارنة",
     },
@@ -329,6 +374,8 @@ const COPY = {
       ranking: "الترتيب",
       reason: "سبب الاختيار",
       risks: "المخاطر",
+      languages: "اللغات: {value}",
+      missingMust: "فجوات: {value}",
     },
   },
   en: {
@@ -426,7 +473,22 @@ const COPY = {
       mustGate: "Hide must-have failures",
       exp24: "Experience 2-4 years",
       react: "Strong in React",
+      highNice: "55%+ nice-to-have",
       recommended: "Recommended only",
+      languageLabel: "Language",
+      languageAny: "Any",
+      languageArabic: "Arabic",
+      languageEnglish: "English",
+      languageBilingual: "Bilingual",
+      statusLabel: "Status",
+      statusAny: "Any",
+      statusRecommended: "Recommended",
+      statusConsider: "Interview",
+      statusExcluded: "Excluded",
+      scoreLabel: "Match floor",
+      scoreAny: "No minimum",
+      score70: "70%+",
+      score80: "80%+",
     },
     insights: {
       summary: {
@@ -435,7 +497,14 @@ const COPY = {
         excluded: "Excluded with a {score}% score.",
         duplicate: "Duplicate of {name}.",
       },
-      gateFail: "Did not reach 80% of must-have skills.",
+      summaryDetails: {
+        must: "Must-have coverage {value}.",
+        nice: "Nice-to-have coverage {value}.",
+        languages: "Languages: {value}.",
+        experience: "Experience: {value}.",
+        quality: "CV quality: {value}.",
+      },
+      gateFail: "Did not reach 60% of must-have skills.",
       strengths: {
         must: "Matched {value}% of must-have skills.",
         nice: "Matched {value}% of nice-to-have skills.",
@@ -460,9 +529,15 @@ const COPY = {
       empty: "Pick at least two candidates to compare.",
       strengths: "Strengths",
       weaknesses: "Weaknesses",
-      skills: "Skills",
-      experience: "Experience",
-      projects: "Projects & links",
+      skills: "Key skills",
+      languages: "Languages",
+      links: "Key links",
+      scorecard: {
+        heading: "Match snapshot",
+        final: "Final score",
+        must: "Must-have",
+        nice: "Nice-to-have",
+      },
       recommendation: "Recommendation",
       close: "Close comparison",
     },
@@ -488,6 +563,8 @@ const COPY = {
       ranking: "Ranking",
       reason: "Why selected",
       risks: "Risks",
+      languages: "Languages: {value}",
+      missingMust: "Gaps: {value}",
     },
   },
 } as const;
@@ -506,6 +583,20 @@ function formatPercent(value: number): string {
   return Number.isInteger(rounded)
     ? String(Math.round(rounded))
     : rounded.toFixed(1);
+}
+
+function formatExperienceYears(value: number, lang: Lang): string {
+  const rounded = Number(value.toFixed(1));
+  const display = Number.isInteger(rounded)
+    ? String(Math.round(rounded))
+    : rounded.toFixed(1);
+  if (lang === "ar") {
+    if (display === "0") return "0 سنة";
+    if (display === "1") return "سنة واحدة";
+    if (display === "2") return "سنتان";
+    return `${display} سنوات`;
+  }
+  return `${display} yrs`;
 }
 
 function formatBytes(size: number): string {
@@ -538,6 +629,38 @@ function fmt(
     out = out.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
   }
   return out;
+}
+function hostLabelFromUrl(url: string, fallback: string): string {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.replace(/^www\./i, "");
+    if (!hostname) return fallback;
+    return hostname;
+  } catch {
+    const cleaned = url.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+    return cleaned || fallback;
+  }
+}
+function formatLinkBadgeLabel(
+  url: string,
+  platform?: "github" | "linkedin"
+): string {
+  if (platform === "github" || platform === "linkedin") {
+    const prefix = platform === "github" ? "GitHub" : "LinkedIn";
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/$/, "").split("/").filter(Boolean);
+      if (path.length) {
+        return `${prefix} • ${path[0]}`;
+      }
+    } catch {
+      const fallback = url.replace(/^https?:\/\//i, "");
+      const parts = fallback.split(/[/?#]/).filter(Boolean);
+      if (parts.length > 1) return `${prefix} • ${parts[1]}`;
+    }
+    return prefix;
+  }
+  return hostLabelFromUrl(url, "Link");
 }
 
 function detectLanguages(text: string): string[] {
@@ -596,7 +719,10 @@ function parseCandidateMeta(
   const projectLinks = linkMatches
     .filter((url) => !github.includes(url) && !linkedin.includes(url))
     .slice(0, 5)
-    .map((url, idx) => ({ label: `Link ${idx + 1}`, url }));
+    .map((url, idx) => ({
+      label: hostLabelFromUrl(url, `Link ${idx + 1}`),
+      url,
+    }));
 
   const detectedLanguages = detectLanguages(safeText);
   if (cvLang) {
@@ -732,7 +858,7 @@ function computeScores(
       100
     : 0;
 
-  const gatePassed = must.length === 0 || mustPercent >= 80;
+  const gatePassed = must.length === 0 || mustPercent >= 60;
 
   const exp = computeExperienceScore(
     meta.yearsExperience,
@@ -773,6 +899,28 @@ type AiNarrative = {
   weaknesses: string[];
 };
 
+type SkillChip = { label: string; score: number; mustHave: boolean };
+
+type LinkBadge = {
+  label: string;
+  url: string;
+  type: "github" | "linkedin" | "project";
+};
+
+type StrengthMetric = {
+  requirement?: string;
+  score?: number;
+  similarity?: number;
+  mustHave?: boolean;
+};
+
+type RequirementBreakdown = {
+  requirement?: string;
+  score10?: number;
+  similarity?: number;
+  mustHave?: boolean;
+};
+
 function buildAiNarrative(
   result: CandidateResult,
   lang: Lang,
@@ -800,6 +948,45 @@ function buildAiNarrative(
     summary = ai.summary;
   }
 
+  const detailTemplates = texts.summaryDetails;
+  const detailParts: string[] = [];
+  if (detailTemplates) {
+    detailParts.push(
+      fmt(detailTemplates.must, { value: `${formatPercent(scores.mustPercent)}%` })
+    );
+    if (scores.nicePercent > 0) {
+      detailParts.push(
+        fmt(detailTemplates.nice, { value: `${formatPercent(scores.nicePercent)}%` })
+      );
+    }
+    if (meta.languages.length) {
+      const langs = formatList(meta.languages, lang) || meta.languages.join(
+        lang === "ar" ? "، " : ", "
+      );
+      detailParts.push(fmt(detailTemplates.languages, { value: langs }));
+    }
+    if (typeof meta.yearsExperience === "number" && meta.yearsExperience >= 0) {
+      detailParts.push(
+        fmt(detailTemplates.experience, {
+          value: formatExperienceYears(meta.yearsExperience, lang),
+        })
+      );
+    }
+    if (scores.qualityScore > 0) {
+      detailParts.push(
+        fmt(detailTemplates.quality, {
+          value: `${formatPercent(scores.qualityScore)}%`,
+        })
+      );
+    }
+  }
+
+  if (detailParts.length) {
+    const separator = lang === "ar" ? " • " : " • ";
+    const detailText = detailParts.join(separator);
+    summary = summary ? `${summary}${separator}${detailText}` : detailText;
+  }
+
   if (!scores.gatePassed) {
     weaknesses.push(texts.gateFail);
   }
@@ -821,7 +1008,7 @@ function buildAiNarrative(
       })
     );
   }
-  if (meta.languages.length > 1) {
+  if (meta.languages.length) {
     strengths.push(
       fmt(texts.strengths.languages, {
         value: formatList(meta.languages, lang) || "",
@@ -914,6 +1101,126 @@ function buildAiNarrative(
   return { summary, strengths, weaknesses };
 }
 
+function extractLinkBadges(meta: CandidateMeta): LinkBadge[] {
+  const badges: LinkBadge[] = [];
+  const seen = new Set<string>();
+
+  meta.github.forEach((url) => {
+    if (!url) return;
+    const key = `github:${url}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    badges.push({
+      label: formatLinkBadgeLabel(url, "github"),
+      url,
+      type: "github",
+    });
+  });
+
+  meta.linkedin.forEach((url) => {
+    if (!url) return;
+    const key = `linkedin:${url}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    badges.push({
+      label: formatLinkBadgeLabel(url, "linkedin"),
+      url,
+      type: "linkedin",
+    });
+  });
+
+  meta.projects
+    .filter((project) => project?.url)
+    .forEach((project) => {
+      const url = project.url!;
+      const key = `project:${url}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      badges.push({
+        label: project.label || hostLabelFromUrl(url, "Link"),
+        url,
+        type: "project",
+      });
+    });
+
+  return badges;
+}
+
+function collectTopSkillChips(result: CandidateResult): SkillChip[] {
+  const breakdown = Array.isArray(result.analysis.breakdown)
+    ? (result.analysis.breakdown as RequirementBreakdown[])
+    : [];
+  const metricsRaw = result.analysis.metrics as
+    | { topStrengths?: StrengthMetric[] }
+    | undefined;
+  const fromMetrics = Array.isArray(metricsRaw?.topStrengths)
+    ? metricsRaw?.topStrengths ?? []
+    : [];
+
+  const seen = new Map<string, SkillChip>();
+
+  const addChip = (label?: string, score?: number, mustHave?: boolean) => {
+    if (!label) return;
+    const normalized = label.trim();
+    if (!normalized) return;
+    if (typeof score !== "number" || Number.isNaN(score)) return;
+    const key = normalized.toLowerCase();
+    const existing = seen.get(key);
+    if (!existing || score > existing.score) {
+      seen.set(key, {
+        label: normalized,
+        score,
+        mustHave: Boolean(mustHave),
+      });
+    }
+  };
+
+  fromMetrics.forEach((entry) => {
+    if (!entry) return;
+    const value =
+      typeof entry.score === "number"
+        ? entry.score
+        : typeof entry.similarity === "number"
+        ? entry.similarity * 10
+        : undefined;
+    addChip(entry.requirement, value, entry.mustHave);
+  });
+
+  const sortedBreakdown = breakdown
+    .slice()
+    .sort((a, b) => {
+      const aScore =
+        typeof a.score10 === "number"
+          ? a.score10
+          : typeof a.similarity === "number"
+          ? a.similarity * 10
+          : 0;
+      const bScore =
+        typeof b.score10 === "number"
+          ? b.score10
+          : typeof b.similarity === "number"
+          ? b.similarity * 10
+          : 0;
+      return bScore - aScore;
+    });
+
+  for (const entry of sortedBreakdown) {
+    if (seen.size >= 8) break;
+    const value =
+      typeof entry.score10 === "number"
+        ? entry.score10
+        : typeof entry.similarity === "number"
+        ? entry.similarity * 10
+        : undefined;
+    if (typeof value !== "number" || value < 5) continue;
+    addChip(entry.requirement, value, entry.mustHave);
+  }
+
+  return Array.from(seen.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+}
+
 type Banner = { type: "success" | "error" | "info"; text: string } | null;
 
 export default function TalentWorkflow() {
@@ -955,6 +1262,9 @@ export default function TalentWorkflow() {
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pinnedId, setPinnedId] = React.useState<string | null>(null);
   const [activeFilters, setActiveFilters] = React.useState<string[]>([]);
+  const [languageFilter, setLanguageFilter] = React.useState<string>("all");
+  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [scoreFilter, setScoreFilter] = React.useState<string>("any");
   const [sortState, setSortState] = React.useState<{
     key: SortKey;
     direction: "asc" | "desc";
@@ -1231,6 +1541,14 @@ export default function TalentWorkflow() {
     copy.notifications.saved,
     pushBanner,
   ]);
+
+  const removeTemplate = React.useCallback((id: string) => {
+    setTemplates((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      window.localStorage.setItem(TEMPLATES_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const applyTemplate = React.useCallback((template: JobTemplate) => {
     setJobTitle(template.title);
@@ -1640,17 +1958,29 @@ export default function TalentWorkflow() {
       .slice(0, 3);
     if (!top.length) return;
     const rows = top
-      .map(
-        (item, index) => `
+      .map((item, index) => {
+        const languagesText = item.meta.languages.length
+          ? fmt(copy.managerReport.languages, {
+              value: formatList(item.meta.languages, lang),
+            })
+          : "";
+        const missingList = item.scores.missingMust ?? [];
+        const missingText = missingList.length
+          ? fmt(copy.managerReport.missingMust, {
+              value: formatList(missingList, lang),
+            })
+          : "";
+        const risks = [languagesText, missingText].filter(Boolean).join(" • ") || "—";
+        return `
           <tr>
             <td>${index + 1}</td>
             <td>${item.meta.displayName}</td>
             <td>${formatPercent(item.scores.finalScore)}%</td>
             <td>${item.meta.lastCompany || ""}</td>
-            <td>${formatList(item.scores.missingMust, lang)}</td>
+            <td>${risks}</td>
           </tr>
-        `
-      )
+        `;
+      })
       .join("");
 
     const html = `
@@ -1716,6 +2046,7 @@ export default function TalentWorkflow() {
       { id: "mustGate", label: copy.filters.mustGate },
       { id: "exp24", label: copy.filters.exp24 },
       { id: "react", label: copy.filters.react },
+      { id: "highNice", label: copy.filters.highNice },
       { id: "recommended", label: copy.filters.recommended },
     ],
     [copy.filters]
@@ -1729,6 +2060,8 @@ export default function TalentWorkflow() {
         activeFilters.includes("recommended") &&
         item.scores.status !== "recommended"
       )
+        return false;
+      if (activeFilters.includes("highNice") && item.scores.nicePercent < 55)
         return false;
       if (activeFilters.includes("exp24")) {
         if (
@@ -1745,9 +2078,28 @@ export default function TalentWorkflow() {
         );
         if (!hasReact) return false;
       }
+      if (languageFilter !== "all") {
+        const languages = item.meta.languages.map((l) => l.toLowerCase());
+        if (languageFilter === "ar" && !languages.some((l) => /arabic|العربية/.test(l)))
+          return false;
+        if (languageFilter === "en" && !languages.some((l) => /english|الإنجليزية/.test(l)))
+          return false;
+        if (languageFilter === "bilingual" && item.meta.languages.length < 2)
+          return false;
+      }
+      if (statusFilter !== "all" && item.scores.status !== statusFilter)
+        return false;
+      if (scoreFilter === "70" && item.scores.finalScore < 70) return false;
+      if (scoreFilter === "80" && item.scores.finalScore < 80) return false;
       return true;
     });
-  }, [results, activeFilters]);
+  }, [
+    results,
+    activeFilters,
+    languageFilter,
+    statusFilter,
+    scoreFilter,
+  ]);
 
   const sortedResults = React.useMemo(() => {
     const sorted = [...filteredResults].sort((a, b) => {
@@ -2119,13 +2471,28 @@ export default function TalentWorkflow() {
           ) : (
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               {templates.map((template) => (
-                <button
+                <div
                   key={template.id}
-                  onClick={() => applyTemplate(template)}
-                  className="rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1 font-semibold text-[#D85E00] hover:bg-[#FF7A00]/10"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#FF7A00]/30 bg-white ps-3 pe-1 py-1 text-[#D85E00]"
                 >
-                  {template.title}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => applyTemplate(template)}
+                    className="font-semibold transition hover:text-[#FF7A00]"
+                  >
+                    {template.title}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeTemplate(template.id)}
+                    aria-label={
+                      lang === "ar" ? "حذف القالب" : "Remove template"
+                    }
+                    className="inline-flex size-5 items-center justify-center rounded-full text-[#D85E00]/70 transition hover:bg-[#FF7A00]/10 hover:text-[#D85E00]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -2280,30 +2647,79 @@ export default function TalentWorkflow() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Filter className="h-4 w-4 text-[#FF7A00]" />
-          <span className="text-xs font-semibold text-[#2F3A4A]/70">
-            {copy.table.filtersTitle}
-          </span>
-          <div className="flex flex-wrap gap-2 text-xs">
-            {quickFilters.map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => toggleFilter(filter.id)}
-                className={clsx(
-                  "rounded-full border px-3 py-1 font-semibold transition",
-                  activeFilters.includes(filter.id)
-                    ? "border-transparent bg-[#FF7A00] text-white"
-                    : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
-                )}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-          {selected.length > 0 && (
-            <span className="text-xs text-[#2F3A4A]/60">
-              {copy.table.selectedCount.replace(
-                "{count}",
-                String(selected.length)
+        <span className="text-xs font-semibold text-[#2F3A4A]/70">
+          {copy.table.filtersTitle}
+        </span>
+        <div className="flex flex-wrap gap-2 text-xs">
+          {quickFilters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => toggleFilter(filter.id)}
+              className={clsx(
+                "rounded-full border px-3 py-1 font-semibold transition",
+                activeFilters.includes(filter.id)
+                  ? "border-transparent bg-[#FF7A00] text-white"
+                  : "border-[#FF7A00]/40 bg-white text-[#D85E00] hover:bg-[#FF7A00]/10"
+              )}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-[#2F3A4A]/80">
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.languageLabel}
+            </span>
+            <select
+              value={languageFilter}
+              onChange={(event) => setLanguageFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="all">{copy.filters.languageAny}</option>
+              <option value="ar">{copy.filters.languageArabic}</option>
+              <option value="en">{copy.filters.languageEnglish}</option>
+              <option value="bilingual">{copy.filters.languageBilingual}</option>
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.statusLabel}
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="all">{copy.filters.statusAny}</option>
+              <option value="recommended">{copy.filters.statusRecommended}</option>
+              <option value="consider">{copy.filters.statusConsider}</option>
+              <option value="excluded">{copy.filters.statusExcluded}</option>
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-2 rounded-full border border-[#FF7A00]/30 bg-white px-3 py-1">
+            <span className="font-semibold text-[#D85E00]">
+              {copy.filters.scoreLabel}
+            </span>
+            <select
+              value={scoreFilter}
+              onChange={(event) => setScoreFilter(event.target.value)}
+              className="bg-transparent text-[#2F3A4A] focus:outline-none"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <option value="any">{copy.filters.scoreAny}</option>
+              <option value="70">{copy.filters.score70}</option>
+              <option value="80">{copy.filters.score80}</option>
+            </select>
+          </label>
+        </div>
+        {selected.length > 0 && (
+          <span className="text-xs text-[#2F3A4A]/60">
+            {copy.table.selectedCount.replace(
+              "{count}",
+              String(selected.length)
               )}
             </span>
           )}
@@ -2449,6 +2865,7 @@ export default function TalentWorkflow() {
                   { experienceBand },
                   duplicateMap.get(item.id)
                 );
+                const linkBadges = extractLinkBadges(item.meta);
                 return (
                   <tr key={item.id} className="bg-white/60">
                     <td className="px-3 py-3">
@@ -2495,7 +2912,7 @@ export default function TalentWorkflow() {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="rounded-full bg-[#FFB26B]/20 px-2 py-1 text-center text-xs font-semibold text-[#D85E00]">
+                      <div className="rounded-full border border-[#F3C969]/40 bg-[#FDF3C4]/80 px-2 py-1 text-center text-xs font-semibold text-[#8B5E00]">
                         {formatPercent(item.scores.nicePercent)}%
                       </div>
                     </td>
@@ -2514,7 +2931,7 @@ export default function TalentWorkflow() {
                     </td>
                     <td className="px-3 py-3 text-xs text-[#2F3A4A]/80">
                       <div className="space-y-2">
-                        <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm transition hover:shadow-md animate-[pulse_7s_ease-in-out_infinite]">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FFF4E5] via-[#FFE8CC] to-[#FFF4E5] px-3 py-1 text-[11px] font-semibold text-[#9A3412] shadow-sm transition hover:shadow-md animate-[pulse_7s_ease-in-out_infinite]">
                           <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
                           <span>{narrative.summary}</span>
                         </div>
@@ -2535,10 +2952,32 @@ export default function TalentWorkflow() {
                             {narrative.weaknesses.map((line, index) => (
                               <span
                                 key={`weakness-${item.id}-${index}`}
-                                className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
+                                className="rounded-full bg-[#FEF3C7] px-3 py-1 text-[10px] font-medium text-[#92400E] shadow-sm"
                               >
                                 {line}
                               </span>
+                            ))}
+                          </div>
+                        )}
+                        {linkBadges.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {linkBadges.map((badge, index) => (
+                              <a
+                                key={`${item.id}-${badge.type}-${index}`}
+                                href={badge.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-full border border-[#FF7A00]/30 bg-white/80 px-3 py-1 text-[10px] font-semibold text-[#B34A00] transition hover:border-[#FF7A00] hover:text-[#D85E00]"
+                              >
+                                {badge.type === "github" ? (
+                                  <Github className="h-3.5 w-3.5" />
+                                ) : badge.type === "linkedin" ? (
+                                  <Linkedin className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Link2 className="h-3.5 w-3.5" />
+                                )}
+                                <span>{badge.label}</span>
+                              </a>
                             ))}
                           </div>
                         )}
@@ -2548,12 +2987,10 @@ export default function TalentWorkflow() {
                       <span
                         className={clsx(
                           "inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold",
-                          item.scores.status === "recommended" &&
-                            "bg-[#16A34A]/10 text-[#16A34A]",
-                          item.scores.status === "consider" &&
-                            "bg-[#FF7A00]/10 text-[#D85E00]",
-                          item.scores.status === "excluded" &&
-                            "bg-red-100 text-red-600"
+                          getStatusBadgeClass(
+                            item.scores,
+                            Boolean(item.scores.duplicateOf)
+                          )
                         )}
                       >
                         {
@@ -2609,18 +3046,20 @@ export default function TalentWorkflow() {
               {comparisonCandidates.length >= 2 && (
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
                   {comparisonCandidates.map((item) => {
-                    const narrative = buildAiNarrative(
-                      item,
-                      lang,
-                      copy,
-                      { experienceBand },
-                      duplicateMap.get(item.id)
-                    );
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm"
-                      >
+                  const narrative = buildAiNarrative(
+                    item,
+                    lang,
+                    copy,
+                    { experienceBand },
+                    duplicateMap.get(item.id)
+                  );
+                  const linkBadges = extractLinkBadges(item.meta);
+                  const skillChips = collectTopSkillChips(item);
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-[#FFE4C8] bg-white/90 p-4 shadow-sm"
+                    >
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-sm font-semibold text-[#2F3A4A]">
@@ -2635,12 +3074,10 @@ export default function TalentWorkflow() {
                           <span
                             className={clsx(
                               "rounded-full px-3 py-1 text-xs font-semibold",
-                              item.scores.status === "recommended" &&
-                                "bg-[#16A34A]/10 text-[#16A34A]",
-                              item.scores.status === "consider" &&
-                                "bg-[#FF7A00]/10 text-[#D85E00]",
-                              item.scores.status === "excluded" &&
-                                "bg-red-100 text-red-600"
+                              getStatusBadgeClass(
+                                item.scores,
+                                Boolean(item.scores.duplicateOf)
+                              )
                             )}
                           >
                             {
@@ -2652,69 +3089,162 @@ export default function TalentWorkflow() {
                             }
                           </span>
                         </div>
-                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">
-                            {copy.comparison.recommendation}
-                          </div>
-                          <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#ffe8d6] via-[#ffdff9] to-[#ffe8d6] px-3 py-1 text-[11px] font-semibold text-[#b34a00] shadow-sm">
-                            <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
-                            <span>{narrative.summary}</span>
-                          </div>
-                        </div>
-                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#16A34A]">
-                            {copy.comparison.strengths}
-                          </div>
-                          {narrative.strengths.length ? (
-                            <div className="mt-1 flex flex-wrap gap-1.5">
-                              {narrative.strengths.map((line, index) => (
-                                <span
-                                  key={`modal-strength-${item.id}-${index}`}
-                                  className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
-                                >
-                                  {line}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[#2F3A4A]/50">—</p>
-                          )}
-                        </div>
-                        <div className="mt-3 text-xs text-[#2F3A4A]/70">
-                          <div className="font-semibold text-[#D85E00]">
-                            {copy.comparison.weaknesses}
-                          </div>
-                          {narrative.weaknesses.length ? (
-                            <div className="mt-1 flex flex-wrap gap-1.5">
-                              {narrative.weaknesses.map((line, index) => (
-                                <span
-                                  key={`modal-weakness-${item.id}-${index}`}
-                                  className="rounded-full bg-[#fee4e2] px-3 py-1 text-[10px] font-medium text-[#b42318] shadow-sm"
-                                >
-                                  {line}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-[#2F3A4A]/50">—</p>
-                          )}
-                        </div>
-                        <div className="mt-3 grid gap-2 text-xs text-[#2F3A4A]/70">
+                        <div className="mt-3 grid gap-3 text-xs text-[#2F3A4A]/70">
                           <div>
-                            <span className="font-semibold text-[#D85E00]">
-                              {copy.comparison.skills}:
-                            </span>{" "}
-                            {formatList(item.meta.languages, lang) || "—"}
+                            <div className="font-semibold text-[#D85E00]">
+                              {copy.comparison.recommendation}
+                            </div>
+                            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FFF4E5] via-[#FFE8CC] to-[#FFF4E5] px-3 py-1 text-[11px] font-semibold text-[#9A3412] shadow-sm">
+                              <Sparkles className="h-3.5 w-3.5 text-[#ff7a00]" />
+                              <span>{narrative.summary}</span>
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-[#FFF9F0] p-3 text-[11px] text-[#9A3412] shadow-inner">
+                            <div className="font-semibold text-[#B34A00]">
+                              {copy.comparison.scorecard.heading}
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-3">
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-[#b34a00]/70">
+                                  {copy.comparison.scorecard.final}
+                                </div>
+                                <div className="text-base font-bold text-[#D85E00]">
+                                  {formatPercent(item.scores.finalScore)}%
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-[#b34a00]/70">
+                                  {copy.comparison.scorecard.must}
+                                </div>
+                                <div className="text-base font-bold text-[#B34A00]">
+                                  {formatPercent(item.scores.mustPercent)}%
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-[#b34a00]/70">
+                                  {copy.comparison.scorecard.nice}
+                                </div>
+                                <div className="text-base font-bold text-[#B35C00]">
+                                  {formatPercent(item.scores.nicePercent)}%
+                                </div>
+                              </div>
+                            </div>
                           </div>
                           <div>
-                            <span className="font-semibold text-[#D85E00]">
-                              {copy.comparison.projects}:
-                            </span>{" "}
-                            {item.meta.projects.length
-                              ? item.meta.projects
-                                  .map((p) => p.url || p.label)
-                                  .join(" • ")
-                              : "—"}
+                            <div className="font-semibold text-[#D85E00]">
+                              {copy.comparison.languages}
+                            </div>
+                            {item.meta.languages.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {item.meta.languages.map((language, index) => (
+                                  <span
+                                    key={`modal-lang-${item.id}-${index}`}
+                                    className="rounded-full bg-[#FFE8CC] px-3 py-1 text-[10px] font-semibold text-[#9A3412] shadow-sm"
+                                  >
+                                    {language}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[#2F3A4A]/50">—</p>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[#D85E00]">
+                              {copy.comparison.skills}
+                            </div>
+                            {skillChips.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {skillChips.map((chip, index) => {
+                                  const chipScore = Math.round(chip.score * 10) / 10;
+                                  const display = Number.isInteger(chipScore)
+                                    ? `${chipScore.toFixed(0)}/10`
+                                    : `${chipScore.toFixed(1)}/10`;
+                                  return (
+                                    <span
+                                      key={`modal-skill-${item.id}-${index}`}
+                                      className={clsx(
+                                        "rounded-full px-3 py-1 text-[10px] font-semibold shadow-sm",
+                                        chip.mustHave
+                                          ? "bg-[#FFEDD5] text-[#B45309]"
+                                          : "bg-[#FDF3C4] text-[#8B5E00]"
+                                      )}
+                                    >
+                                      {chip.label} • {display}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="text-[#2F3A4A]/50">—</p>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[#D85E00]">
+                              {copy.comparison.links}
+                            </div>
+                            {linkBadges.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {linkBadges.map((badge, index) => (
+                                  <a
+                                    key={`modal-link-${item.id}-${index}`}
+                                    href={badge.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-full border border-[#FF7A00]/30 bg-white/80 px-3 py-1 text-[10px] font-semibold text-[#B34A00] transition hover:border-[#FF7A00] hover:text-[#D85E00]"
+                                  >
+                                    {badge.type === "github" ? (
+                                      <Github className="h-3.5 w-3.5" />
+                                    ) : badge.type === "linkedin" ? (
+                                      <Linkedin className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Link2 className="h-3.5 w-3.5" />
+                                    )}
+                                    <span>{badge.label}</span>
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[#2F3A4A]/50">—</p>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[#16A34A]">
+                              {copy.comparison.strengths}
+                            </div>
+                            {narrative.strengths.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {narrative.strengths.map((line, index) => (
+                                  <span
+                                    key={`modal-strength-${item.id}-${index}`}
+                                    className="rounded-full bg-[#16A34A]/10 px-3 py-1 text-[10px] font-semibold text-[#0f5132] shadow-sm"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[#2F3A4A]/50">—</p>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-[#D85E00]">
+                              {copy.comparison.weaknesses}
+                            </div>
+                            {narrative.weaknesses.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {narrative.weaknesses.map((line, index) => (
+                                  <span
+                                    key={`modal-weakness-${item.id}-${index}`}
+                                    className="rounded-full bg-[#FEF3C7] px-3 py-1 text-[10px] font-medium text-[#92400E] shadow-sm"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[#2F3A4A]/50">—</p>
+                            )}
                           </div>
                         </div>
                       </div>

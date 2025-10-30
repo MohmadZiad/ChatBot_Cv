@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { Lang } from "@/lib/i18n";
 
 export type ReqItem = {
@@ -276,6 +276,8 @@ const LABELS: Record<
     title: string;
     search: string;
     must: string;
+    nice: string;
+    add: string;
     weight: string;
     categories: string;
     noResults: string;
@@ -285,6 +287,8 @@ const LABELS: Record<
     title: "إضافة متطلبات سريعة",
     search: "ابحث عن مهارة…",
     must: "أساسي",
+    nice: "إضافي",
+    add: "إضافة",
     weight: "وزن",
     categories: "اختر المجال",
     noResults: "لا توجد عناصر مطابقة حالياً",
@@ -293,6 +297,8 @@ const LABELS: Record<
     title: "Quick requirements",
     search: "Search skills…",
     must: "Must",
+    nice: "Nice",
+    add: "Add",
     weight: "Weight",
     categories: "Pick a domain",
     noResults: "No items found yet",
@@ -330,6 +336,13 @@ export default function RequirementPicker({ onAdd, lang = "ar" }: Props) {
     );
   }, [category, q]);
 
+  const handleAddCustom = useCallback(() => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    onAdd({ requirement: trimmed, mustHave: must, weight });
+    setQ("");
+  }, [q, must, weight, onAdd]);
+
   return (
     <div
       dir={direction}
@@ -360,21 +373,50 @@ export default function RequirementPicker({ onAdd, lang = "ar" }: Props) {
           })}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              handleAddCustom();
+            }
+          }}
           placeholder={labels.search}
           className="flex-1 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
         />
-        <label className="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
-          <input
-            type="checkbox"
-            checked={must}
-            onChange={(e) => setMust(e.target.checked)}
-          />
-          {labels.must}
-        </label>
+        <div className="flex items-center gap-1 rounded-2xl border border-[var(--color-border)] bg-[var(--surface-soft)]/70 p-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setMust(true)}
+            className={`rounded-2xl px-2 py-1 transition ${
+              must
+                ? "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+            }`}
+          >
+            {labels.must}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMust(false)}
+            className={`rounded-2xl px-2 py-1 transition ${
+              must
+                ? "text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+                : "bg-[var(--color-primary)]/10 text-[var(--color-primary)]"
+            }`}
+          >
+            {labels.nice}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={handleAddCustom}
+          className="inline-flex items-center rounded-2xl border border-[var(--color-primary)]/40 bg-[var(--surface-soft)]/60 px-3 py-2 text-xs font-semibold text-[var(--color-primary)] transition hover:bg-[var(--color-primary)]/10"
+        >
+          {labels.add}
+        </button>
         <select
           value={weight}
           onChange={(e) => setWeight(Number(e.target.value))}
