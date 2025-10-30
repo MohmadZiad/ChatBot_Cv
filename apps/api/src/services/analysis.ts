@@ -234,7 +234,7 @@ export async function runAnalysis(jobId: string, cvId: string) {
 
   const mustPercent = pct(mustReqs);
   const nicePercent = pct(niceReqs);
-  const gatePassed = mustReqs.length === 0 || mustPercent >= 80;
+  const gatePassed = mustReqs.length === 0 || mustPercent >= 60;
 
   const topStrengths = perReq
     .filter((item) => Number(item.score10 ?? 0) >= 8)
@@ -450,7 +450,7 @@ export async function recommendTopCandidates(
       gatePassed:
         typeof metrics?.gatePassed === "boolean"
           ? metrics.gatePassed
-          : mustPercent >= 80,
+          : mustPercent >= 60,
       missingMust,
       improvement,
     };
@@ -627,7 +627,7 @@ export async function improvementSuggestions(
         score,
         mustPercent,
         nicePercent,
-        gatePassed: metrics?.gatePassed ?? mustPercent >= 80,
+        gatePassed: metrics?.gatePassed ?? mustPercent >= 60,
         missingMust,
         improvement,
         highlights,

@@ -278,7 +278,14 @@ const COPY = {
         excluded: "تم استبعاده بدرجة {score}%.",
         duplicate: "مكرر لنفس المتقدم ({name}).",
       },
-      gateFail: "لم يحقق 80% من مهارات الـMust-have.",
+      summaryDetails: {
+        must: "تغطية الـMust-have {value}.",
+        nice: "المهارات الإضافية {value}.",
+        languages: "اللغات: {value}.",
+        experience: "الخبرة: {value}.",
+        quality: "جودة السيرة: {value}.",
+      },
+      gateFail: "لم يحقق 60% من مهارات الـMust-have.",
       strengths: {
         must: "حقق {value}% من متطلبات الـMust-have.",
         nice: "أظهر {value}% من مهارات Nice-to-have.",
@@ -435,7 +442,14 @@ const COPY = {
         excluded: "Excluded with a {score}% score.",
         duplicate: "Duplicate of {name}.",
       },
-      gateFail: "Did not reach 80% of must-have skills.",
+      summaryDetails: {
+        must: "Must-have coverage {value}.",
+        nice: "Nice-to-have coverage {value}.",
+        languages: "Languages: {value}.",
+        experience: "Experience: {value}.",
+        quality: "CV quality: {value}.",
+      },
+      gateFail: "Did not reach 60% of must-have skills.",
       strengths: {
         must: "Matched {value}% of must-have skills.",
         nice: "Matched {value}% of nice-to-have skills.",
@@ -506,6 +520,20 @@ function formatPercent(value: number): string {
   return Number.isInteger(rounded)
     ? String(Math.round(rounded))
     : rounded.toFixed(1);
+}
+
+function formatExperienceYears(value: number, lang: Lang): string {
+  const rounded = Number(value.toFixed(1));
+  const display = Number.isInteger(rounded)
+    ? String(Math.round(rounded))
+    : rounded.toFixed(1);
+  if (lang === "ar") {
+    if (display === "0") return "0 سنة";
+    if (display === "1") return "سنة واحدة";
+    if (display === "2") return "سنتان";
+    return `${display} سنوات`;
+  }
+  return `${display} yrs`;
 }
 
 function formatBytes(size: number): string {
@@ -732,7 +760,7 @@ function computeScores(
       100
     : 0;
 
-  const gatePassed = must.length === 0 || mustPercent >= 80;
+  const gatePassed = must.length === 0 || mustPercent >= 60;
 
   const exp = computeExperienceScore(
     meta.yearsExperience,
@@ -798,6 +826,45 @@ function buildAiNarrative(
 
   if (ai?.summary) {
     summary = ai.summary;
+  }
+
+  const detailTemplates = texts.summaryDetails;
+  const detailParts: string[] = [];
+  if (detailTemplates) {
+    detailParts.push(
+      fmt(detailTemplates.must, { value: `${formatPercent(scores.mustPercent)}%` })
+    );
+    if (scores.nicePercent > 0) {
+      detailParts.push(
+        fmt(detailTemplates.nice, { value: `${formatPercent(scores.nicePercent)}%` })
+      );
+    }
+    if (meta.languages.length) {
+      const langs = formatList(meta.languages, lang) || meta.languages.join(
+        lang === "ar" ? "، " : ", "
+      );
+      detailParts.push(fmt(detailTemplates.languages, { value: langs }));
+    }
+    if (typeof meta.yearsExperience === "number" && meta.yearsExperience >= 0) {
+      detailParts.push(
+        fmt(detailTemplates.experience, {
+          value: formatExperienceYears(meta.yearsExperience, lang),
+        })
+      );
+    }
+    if (scores.qualityScore > 0) {
+      detailParts.push(
+        fmt(detailTemplates.quality, {
+          value: `${formatPercent(scores.qualityScore)}%`,
+        })
+      );
+    }
+  }
+
+  if (detailParts.length) {
+    const separator = lang === "ar" ? " • " : " • ";
+    const detailText = detailParts.join(separator);
+    summary = summary ? `${summary}${separator}${detailText}` : detailText;
   }
 
   if (!scores.gatePassed) {
