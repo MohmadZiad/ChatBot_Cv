@@ -201,6 +201,31 @@ const highlightClassMap: Record<HighlightTone, string> = {
   gap: "inline-block rounded bg-rose-100 px-1 font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-100",
 };
 
+const MUST_MATCH_THRESHOLD = 0.65;
+const MUST_PARTIAL_THRESHOLD = 0.5;
+const NICE_MATCH_THRESHOLD = 0.55;
+const NICE_PARTIAL_THRESHOLD = 0.4;
+const MIN_SNIPPET_CHARACTERS = 12;
+const MIN_SNIPPET_WORDS = 3;
+
+const hasMeaningfulSnippet = (value: string | null | undefined) => {
+  if (!value) return false;
+  const normalised = value.replace(/\s+/g, " ").trim();
+  if (!normalised) return false;
+  const characterCount = normalised.replace(/\s/g, "").length;
+  if (characterCount < MIN_SNIPPET_CHARACTERS) return false;
+  const wordCount = normalised.split(/\s+/).filter(Boolean).length;
+  return wordCount >= MIN_SNIPPET_WORDS;
+};
+
+type RequirementConfidence = "strong" | "partial" | "weak";
+
+type RequirementInsight = Analysis["breakdown"][number] & {
+  tone: HighlightTone;
+  confidence: RequirementConfidence;
+  hasMeaningfulSnippet: boolean;
+};
+
 /* --------------------------------- page -------------------------------- */
 
 export default function ResultDetail() {
@@ -243,6 +268,9 @@ export default function ResultDetail() {
             cvLoading: "جارٍ تحميل نص السيرة...",
             cvError: "تعذّر تحميل نص السيرة.",
             cvEmpty: "لا يوجد نص مستخرج لعرضه.",
+            cvManualTitle: "ألصق نص السيرة هنا",
+            cvManualPlaceholder: "ألصق أو اكتب نص السيرة الذاتية هنا...",
+            cvManualButton: "استخدم النص",
             cvLegendMatch: "متطلبات متطابقة",
             cvLegendBonus: "ميزة إضافية",
             cvLegendGap: "تفاصيل ناقصة",
@@ -283,11 +311,26 @@ export default function ResultDetail() {
             cvLoading: "Loading CV text...",
             cvError: "Failed to load CV text.",
             cvEmpty: "No extracted CV text is available.",
+            cvManualTitle: "Paste the CV text here",
+            cvManualPlaceholder: "Paste or type the CV text here...",
+            cvManualButton: "Use this text",
             cvLegendMatch: "Matches requirements",
             cvLegendBonus: "Bonus skill",
             cvLegendGap: "Needs attention",
             cvMissingLabel: "Missing",
             cvCopy: "Copy CV",
+          },
+    [lang]
+  );
+
+  const requirementCopy = useMemo(
+    () =>
+      lang === "ar"
+        ? {
+            noEvidence: "لم نعثر على دليل موثوق داخل السيرة الذاتية.",
+          }
+        : {
+            noEvidence: "No reliable evidence was found in the CV.",
           },
     [lang]
   );
@@ -339,6 +382,7 @@ export default function ResultDetail() {
   const [cvLoading, setCvLoading] = useState(false);
   const [cvError, setCvError] = useState<string | null>(null);
   const [cvCopied, setCvCopied] = useState(false);
+  const [cvDraft, setCvDraft] = useState<string>("");
 
   /* ----------------------------- derived data ----------------------------- */
 
@@ -608,6 +652,12 @@ export default function ResultDetail() {
     }
   }, [cvText]);
 
+  const handleCvManualApply = useCallback(() => {
+    if (!cvDraft.trim()) return;
+    setCvText(cvDraft);
+    setCvError(null);
+  }, [cvDraft]);
+
   useEffect(() => {
     if (!languagesBullet) return;
     setQuickSummary((prev) => {
@@ -652,6 +702,7 @@ export default function ResultDetail() {
   useEffect(() => {
     if (!data?.cvId) {
       setCvText("");
+      setCvDraft("");
       return;
     }
     let alive = true;
@@ -661,12 +712,15 @@ export default function ResultDetail() {
       .getById(data.cvId)
       .then((res) => {
         if (!alive) return;
-        setCvText(res.cv?.parsedText ?? "");
+        const parsed = res.cv?.parsedText ?? "";
+        setCvText(parsed);
+        setCvDraft(parsed);
       })
       .catch((err: unknown) => {
         if (!alive) return;
         setCvError(getErrorMessage(err, jobCopy.cvError));
         setCvText("");
+        setCvDraft("");
       })
       .finally(() => {
         if (alive) setCvLoading(false);
@@ -680,15 +734,51 @@ export default function ResultDetail() {
     setCvCopied(false);
   }, [cvText]);
 
+  const breakdownInsights = useMemo<RequirementInsight[]>(() => {
+    if (!data?.breakdown?.length) return [];
+    return data.breakdown.map((item) => {
+      const excerpt = item.bestChunk?.excerpt ?? "";
+      const meaningful = hasMeaningfulSnippet(excerpt);
+      const similarity = Number.isFinite(item.similarity) ? item.similarity : 0;
+      const matchThreshold = item.mustHave
+        ? MUST_MATCH_THRESHOLD
+        : NICE_MATCH_THRESHOLD;
+      const partialThreshold = item.mustHave
+        ? MUST_PARTIAL_THRESHOLD
+        : NICE_PARTIAL_THRESHOLD;
+
+      let confidence: RequirementConfidence = "weak";
+      if (meaningful && similarity >= matchThreshold) {
+        confidence = "strong";
+      } else if (meaningful && similarity >= partialThreshold) {
+        confidence = "partial";
+      }
+
+      let tone: HighlightTone = "gap";
+      if (confidence === "strong") {
+        tone = item.mustHave ? "match" : "bonus";
+      } else if (confidence === "partial") {
+        tone = item.mustHave ? "gap" : "bonus";
+      }
+
+      return {
+        ...item,
+        tone,
+        confidence,
+        hasMeaningfulSnippet: meaningful,
+      } as RequirementInsight;
+    });
+  }, [data?.breakdown]);
+
   const cvHighlights = useMemo(() => {
     if (!cvText.trim()) return [] as CvHighlight[];
-    const breakdown = data?.breakdown ?? [];
-    if (!breakdown.length) return [] as CvHighlight[];
+    if (!breakdownInsights.length) return [] as CvHighlight[];
     const highlights: CvHighlight[] = [];
     const seen = new Set<string>();
-    for (const item of breakdown) {
+    for (const item of breakdownInsights) {
       const snippet = item.bestChunk?.excerpt?.trim();
-      if (!snippet) continue;
+      if (!snippet || !item.hasMeaningfulSnippet) continue;
+      if (item.confidence === "weak") continue;
       const key = `${item.requirement}__${snippet}`;
       if (seen.has(key)) continue;
       const pattern = escapeRegExp(snippet).replace(/\s+/g, "\\s+");
@@ -700,19 +790,12 @@ export default function ResultDetail() {
       if (highlights.some((range) => start < range.end && end > range.start)) {
         continue;
       }
-      let tone: HighlightTone;
-      if (item.similarity >= 0.45) {
-        tone = item.mustHave ? "match" : "bonus";
-      } else if (item.similarity >= 0.25) {
-        tone = item.mustHave ? "gap" : "bonus";
-      } else {
-        tone = "gap";
-      }
+      const tone = item.tone;
       highlights.push({ start, end, tone, requirement: item.requirement });
       seen.add(key);
     }
     return highlights.sort((a, b) => a.start - b.start);
-  }, [cvText, data?.breakdown]);
+  }, [cvText, breakdownInsights]);
 
   const highlightedCvNodes = useMemo(() => {
     if (!cvText) return [] as JSX.Element[];
@@ -1104,7 +1187,7 @@ export default function ResultDetail() {
             <span className="inline-flex items-center justify-between gap-2 rounded-full bg-white/10 px-3 py-1">
               <span>{tt("chat.totalRequirements")}</span>
               <span className="font-semibold">
-                {metrics?.totalRequirements ?? data.breakdown.length}
+                {metrics?.totalRequirements ?? breakdownInsights.length}
               </span>
             </span>
           </div>
@@ -1134,8 +1217,8 @@ export default function ResultDetail() {
               <Target className="h-4 w-4" /> {tt("analysisPage.breakdown")}
             </div>
             <div className="space-y-3">
-              {data.breakdown?.length ? (
-                data.breakdown.map((item, idx) => (
+              {breakdownInsights.length ? (
+                breakdownInsights.map((item, idx) => (
                   <motion.div
                     key={`${item.requirement}-${idx}`}
                     variants={bubbleVariants}
@@ -1145,18 +1228,22 @@ export default function ResultDetail() {
                     className="relative overflow-hidden rounded-3xl border border-[#FFD7B3]/60 bg-white/85 p-4 shadow-sm before:absolute before:inset-y-0 before:start-0 before:w-1.5 before:bg-gradient-to-b before:from-[#FF7A00] before:to-[#FFB26B] dark:border-white/10 dark:bg-white/5"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         <div className="text-xs font-semibold uppercase tracking-[0.25em] text-[#B54708] dark:text-[#FFB26B]">
                           {item.mustHave ? "MUST" : "NICE"}
                         </div>
                         <div className="text-sm font-semibold text-[#2F3A4A] dark:text-white">
                           {item.requirement}
                         </div>
-                        {item.bestChunk?.excerpt ? (
+                        {item.hasMeaningfulSnippet && item.bestChunk?.excerpt ? (
                           <div className="text-xs text-[#2F3A4A]/60 dark:text-white/60">
                             “{clampText(item.bestChunk.excerpt, 180)}”
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="text-[11px] text-[#B54708]/70 dark:text-[#FFB26B]/80">
+                            {requirementCopy.noEvidence}
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 text-xs">
                         <span className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
@@ -1360,17 +1447,42 @@ export default function ResultDetail() {
           <div className="rounded-3xl border border-[#FFE4C8] bg-white/90 p-4 shadow-inner dark:border-white/10 dark:bg-white/5">
             {cvLoading ? (
               <AnimatedLoader label={jobCopy.cvLoading} />
-            ) : cvError ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-sm text-red-700">
-                {cvError}
-              </div>
             ) : cvText.trim() ? (
               <div className="max-h-96 overflow-y-auto rounded-2xl border border-[#FFD7B3]/60 bg-white/85 p-4 text-xs leading-relaxed text-[#2F3A4A]/80 dark:border-white/10 dark:bg-white/5 dark:text-white/80">
                 {highlightedCvNodes}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#FFD7B3] px-3 py-8 text-center text-xs text-[#2F3A4A]/60 dark:border-white/10 dark:text-white/60">
-                {jobCopy.cvEmpty}
+              <div className="space-y-3">
+                {cvError ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50/70 px-3 py-2 text-sm text-red-700">
+                    {cvError}
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <label
+                    htmlFor="manual-cv-input"
+                    className="block text-xs font-semibold uppercase tracking-[0.25em] text-[#B54708] dark:text-[#FFB26B]"
+                  >
+                    {jobCopy.cvManualTitle}
+                  </label>
+                  <textarea
+                    id="manual-cv-input"
+                    value={cvDraft}
+                    onChange={(event) => setCvDraft(event.target.value)}
+                    placeholder={jobCopy.cvManualPlaceholder}
+                    className="h-48 w-full rounded-2xl border border-[#FFD7B3]/70 bg-white/90 p-3 text-xs leading-relaxed text-[#2F3A4A]/80 shadow-inner transition focus:border-[#FFB26B] focus:outline-none dark:border-white/10 dark:bg-white/10 dark:text-white/80"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleCvManualApply}
+                    disabled={!cvDraft.trim()}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#FFB26B]/60 bg-[#FFF2E8] px-4 py-2 text-xs font-semibold text-[#D85E00] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#FFD4A8] disabled:opacity-60"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    {jobCopy.cvManualButton}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
