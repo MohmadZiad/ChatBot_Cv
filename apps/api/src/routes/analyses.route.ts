@@ -8,8 +8,26 @@ import {
   improvementSuggestions,
 } from "../services/analysis.js";
 import { Prisma, AnalysisStatus } from "@prisma/client";
+import { serializeJsonSafe } from "../utils/serialize.js";
 
 const MIN_TEXT = Number(process.env.MIN_EXTRACTED_TEXT || "60");
+
+const toFiniteScore = (value: unknown) => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+};
+
+const toPublicAnalysis = (record: any) => {
+  const safe = serializeJsonSafe(record) as Record<string, unknown>;
+  return {
+    ...safe,
+    score: toFiniteScore((safe as any)?.score),
+  };
+};
 
 // دالة تساعد على إنشاء تحليل Placeholder عند نقص النص/المتطلبات
 async function createPlaceholderAnalysis(
@@ -156,12 +174,7 @@ export async function analysesRoute(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const a = await prisma.analysis.findUnique({ where: { id } });
     if (!a) return reply.code(404).send({ ok: false, code: "NOT_FOUND" });
-    return {
-      ...a,
-      score: a.score ? Number(a.score) : null,
-      createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
-    };
+    return toPublicAnalysis(a);
   });
 
   // GET /api/analyses/by-cv/:cvId
@@ -171,12 +184,7 @@ export async function analysesRoute(app: FastifyInstance) {
       where: { cvId },
       orderBy: { createdAt: "desc" },
     });
-    return list.map((a) => ({
-      ...a,
-      score: a.score ? Number(a.score) : null,
-      createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
-    }));
+    return list.map(toPublicAnalysis);
   });
 
   // GET /api/analyses/by-job/:jobId
@@ -189,12 +197,7 @@ export async function analysesRoute(app: FastifyInstance) {
         cv: { select: { id: true, originalFilename: true, createdAt: true } },
       },
     });
-    return list.map((a) => ({
-      ...a,
-      score: a.score ? Number(a.score) : null,
-      createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
-    }));
+    return list.map(toPublicAnalysis);
   });
 
   // POST /api/analyses/compare
