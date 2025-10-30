@@ -23,6 +23,13 @@ async function main() {
   // الراوترات
   registerRoutes(app);
 
+  // Default route for render root checks
+  app.get("/", async () => ({
+    ok: true,
+    message: "ChatBot CV API is running",
+    health: "/api/health",
+  }));
+
   // Error handler
   app.setErrorHandler((err, req, reply) => {
     req.log.error({ err, url: req.url, method: req.method }, "unhandled error");
