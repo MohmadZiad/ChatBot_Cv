@@ -6,6 +6,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ReactNode,
 } from "react";
 import { useParams } from "next/navigation";
 import { AnimatePresence, motion, type MotionProps } from "framer-motion";
