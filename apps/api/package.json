@@ -1,7 +1,6 @@
 {
   "name": "@apps/api",
   "private": true,
-  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
