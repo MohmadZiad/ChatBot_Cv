@@ -226,6 +226,15 @@ type RequirementInsight = Analysis["breakdown"][number] & {
   hasMeaningfulSnippet: boolean;
 };
 
+const confidenceBadgeClassMap: Record<RequirementConfidence, string> = {
+  strong:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-100",
+  partial:
+    "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
+  weak:
+    "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-100",
+};
+
 /* --------------------------------- page -------------------------------- */
 
 export default function ResultDetail() {
@@ -327,9 +336,17 @@ export default function ResultDetail() {
     () =>
       lang === "ar"
         ? {
+            confidenceLabel: "درجة الملاءمة",
+            strong: "تطابق قوي",
+            partial: "تطابق جزئي",
+            weak: "دليل غير كافٍ",
             noEvidence: "لم نعثر على دليل موثوق داخل السيرة الذاتية.",
           }
         : {
+            confidenceLabel: "Fit confidence",
+            strong: "Strong alignment",
+            partial: "Partial alignment",
+            weak: "No reliable evidence",
             noEvidence: "No reliable evidence was found in the CV.",
           },
     [lang]
@@ -1244,6 +1261,14 @@ export default function ResultDetail() {
                             {requirementCopy.noEvidence}
                           </div>
                         )}
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-[#B54708] dark:text-[#FFB26B]">
+                          <span>{requirementCopy.confidenceLabel}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] ${confidenceBadgeClassMap[item.confidence]}`}
+                          >
+                            {requirementCopy[item.confidence]}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 text-xs">
                         <span className="rounded-full bg-[#FFF2E8] px-3 py-1 font-semibold text-[#B54708] shadow-sm dark:bg-white/10 dark:text-[#FFB26B]">
